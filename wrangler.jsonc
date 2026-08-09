@@ -1,11 +1,19 @@
-// Streamable HTTP MCP without Durable Objects
+// DEV-016.39 — stateless MCP; legacy MyMCP Durable Object retirement
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server",
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
+
   "observability": {
     "enabled": true
+  },
+
+  "exports": {
+    "MyMCP": {
+      "type": "durable-object",
+      "state": "deleted"
+    }
   }
 }
