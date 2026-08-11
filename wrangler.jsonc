@@ -1,4 +1,5 @@
 // DEV-016.40 — OAuth 2.1 MCP auth via Cloudflare OAuth Provider + GitHub identity
+// CI guard verification: non-production branches must use `wrangler versions upload`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server",
