@@ -466,6 +466,7 @@ const defaultHandler: ExportedHandler<Env> = {
         oauthConfigured: Boolean(
           String(env.GITHUB_CLIENT_ID || "").trim() &&
             String(env.GITHUB_CLIENT_SECRET || "").trim(),
+        ),
         oauthProvider: "github",
       });
     }
