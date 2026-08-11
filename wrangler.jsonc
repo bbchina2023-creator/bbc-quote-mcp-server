@@ -1,30 +1,28 @@
-// DEV-016.40 — OAuth 2.1 MCP auth via Cloudflare OAuth Provider + GitHub identity
-// CI guard verification: non-production branches must use `wrangler versions upload`.
+// DEV-016.40 STAGING ONLY — isolated OAuth 2.1 MCP contour.
+// This branch must never target the production Worker bbc-quote-mcp-server.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "bbc-quote-mcp-server",
+  "name": "bbc-quote-mcp-server-staging",
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": [
     "nodejs_compat",
     "global_fetch_strictly_public"
   ],
+  "workers_dev": true,
+  "preview_urls": true,
 
   "observability": {
     "enabled": true
   },
 
+  "vars": {
+    "GITHUB_CLIENT_ID": "0v231ivNiSnfHvxPXYjG"
+  },
+
   "kv_namespaces": [
     {
-      "binding": "OAUTH_KV",
-      "id": "6db625aaf498402fbc9610c6185d3376"
+      "binding": "OAUTH_KV"
     }
-  ],
-
-  "exports": {
-    "MyMCP": {
-      "type": "durable-object",
-      "state": "deleted"
-    }
-  }
+  ]
 }
