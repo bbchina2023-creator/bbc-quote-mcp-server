@@ -1,14 +1,24 @@
-// DEV-016.39 — stateless MCP; legacy MyMCP Durable Object retirement
+// DEV-016.40 — OAuth 2.1 MCP auth via Cloudflare OAuth Provider + GitHub identity
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server",
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
 
   "observability": {
     "enabled": true
   },
+
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "6db625aaf498402fbc9610c6185d3376"
+    }
+  ],
 
   "exports": {
     "MyMCP": {
