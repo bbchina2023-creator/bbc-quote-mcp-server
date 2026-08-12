@@ -15,12 +15,15 @@ interface Env {
 }
 
 const SERVER_NAME = "BBC KP Generator";
-const SERVER_VERSION = "1.0.0-dev016.40-staging";
+const SERVER_VERSION = "1.0.0-dev016.40-staging-secure1";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
 const GITHUB_STATE_PREFIX = "bbc:oauth:github-state:";
-const GITHUB_STATE_TTL_SECONDS = 10 * 60;
+const CONSENT_STATE_PREFIX = "bbc:oauth:consent:";
+const OAUTH_FLOW_TTL_SECONDS = 10 * 60;
+const CSRF_COOKIE_NAME = "__Host-BBC_MCP_CSRF";
+const STATE_COOKIE_NAME = "__Host-BBC_MCP_STATE";
 const ALLOWED_GITHUB_USER_ID = 307006935;
 const SUPPORTED_SCOPES = ["quote.read", "quote.write", "quote.generate"];
 
@@ -218,20 +221,187 @@ function requireOAuthConfiguration(env: Env): void {
   }
 }
 
-async function beginGitHubAuthorization(request: Request, env: Env): Promise<Response> {
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function readCookie(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.get("cookie") || "";
+  for (const rawCookie of cookieHeader.split(";")) {
+    const cookie = rawCookie.trim();
+    const separator = cookie.indexOf("=");
+    if (separator < 0) continue;
+    if (cookie.slice(0, separator) === name) {
+      return cookie.slice(separator + 1);
+    }
+  }
+  return null;
+}
+
+function secureCookie(name: string, value: string, maxAge: number): string {
+  return `${name}=${value}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
+}
+
+function htmlHeaders(setCookies: string[] = []): Headers {
+  const headers = new Headers({
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "content-type": "text/html; charset=utf-8",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+  });
+  for (const cookie of setCookies) headers.append("set-cookie", cookie);
+  return headers;
+}
+
+function textResponse(body: string, status: number, setCookies: string[] = []): Response {
+  const headers = new Headers({
+    "cache-control": "no-store",
+    "content-type": "text/plain; charset=utf-8",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+  });
+  for (const cookie of setCookies) headers.append("set-cookie", cookie);
+  return new Response(body, { status, headers });
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function showAuthorizationConsent(request: Request, env: Env): Promise<Response> {
   requireOAuthConfiguration(env);
 
   let oauthRequest: AuthRequest;
   try {
     oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
   } catch {
-    return new Response("Invalid authorization request", { status: 400 });
+    return textResponse("Invalid authorization request", 400);
+  }
+
+  const clientId = String(oauthRequest.clientId || "").trim();
+  if (!clientId) {
+    return textResponse("Missing OAuth client ID", 400);
+  }
+
+  let client: any = null;
+  try {
+    client = await env.OAUTH_PROVIDER.lookupClient(clientId);
+  } catch {
+    return textResponse("Unknown OAuth client", 400);
+  }
+
+  const consentId = crypto.randomUUID();
+  await env.OAUTH_KV.put(`${CONSENT_STATE_PREFIX}${consentId}`, JSON.stringify(oauthRequest), {
+    expirationTtl: OAUTH_FLOW_TTL_SECONDS,
+  });
+
+  const csrfToken = crypto.randomUUID();
+  const csrfCookie = secureCookie(CSRF_COOKIE_NAME, csrfToken, OAUTH_FLOW_TTL_SECONDS);
+  const requestedScopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
+  const clientName =
+    String(client?.clientName || client?.client_name || client?.name || "").trim() || clientId;
+  const scopeText = requestedScopes.length > 0 ? requestedScopes.join(", ") : "Нет дополнительных scopes";
+
+  const body = `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BBC KP Generator — подтверждение доступа</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1f2937; }
+    main { max-width: 680px; margin: 8vh auto; background: white; padding: 32px; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+    h1 { margin-top: 0; font-size: 24px; }
+    .meta { background: #f3f4f6; padding: 16px; border-radius: 10px; margin: 20px 0; }
+    .row { margin: 8px 0; overflow-wrap: anywhere; }
+    .actions { display: flex; gap: 12px; margin-top: 24px; }
+    button { border: 0; border-radius: 9px; padding: 11px 18px; font-size: 15px; cursor: pointer; }
+    .approve { background: #111827; color: white; }
+    .deny { background: #e5e7eb; color: #111827; }
+    p { line-height: 1.55; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Разрешить доступ к BBC KP Generator?</h1>
+  <p>MCP-клиент запрашивает доступ к инструментам BBC КП Generator. После подтверждения вы перейдёте на GitHub для входа.</p>
+  <div class="meta">
+    <div class="row"><strong>Клиент:</strong> ${escapeHtml(clientName)}</div>
+    <div class="row"><strong>Client ID:</strong> ${escapeHtml(clientId)}</div>
+    <div class="row"><strong>Запрошенные права:</strong> ${escapeHtml(scopeText)}</div>
+  </div>
+  <form method="post" action="/authorize">
+    <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+    <input type="hidden" name="consent_id" value="${escapeHtml(consentId)}">
+    <div class="actions">
+      <button class="approve" type="submit" name="decision" value="approve">Разрешить</button>
+      <button class="deny" type="submit" name="decision" value="deny">Отменить</button>
+    </div>
+  </form>
+</main>
+</body>
+</html>`;
+
+  return new Response(body, { status: 200, headers: htmlHeaders([csrfCookie]) });
+}
+
+async function handleAuthorizationConsent(request: Request, env: Env): Promise<Response> {
+  requireOAuthConfiguration(env);
+
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return textResponse("Invalid consent form", 400);
+  }
+
+  const csrfFromForm = String(formData.get("csrf_token") || "");
+  const csrfFromCookie = readCookie(request, CSRF_COOKIE_NAME);
+  const clearCsrf = secureCookie(CSRF_COOKIE_NAME, "", 0);
+  if (!csrfFromForm || !csrfFromCookie || csrfFromForm !== csrfFromCookie) {
+    return textResponse("CSRF validation failed", 400, [clearCsrf]);
+  }
+
+  const consentId = String(formData.get("consent_id") || "").trim();
+  if (!consentId) {
+    return textResponse("Missing consent state", 400, [clearCsrf]);
+  }
+
+  const consentKey = `${CONSENT_STATE_PREFIX}${consentId}`;
+  const serialized = await env.OAUTH_KV.get(consentKey);
+  await env.OAUTH_KV.delete(consentKey);
+  if (!serialized) {
+    return textResponse("Expired or invalid consent state", 400, [clearCsrf]);
+  }
+
+  if (String(formData.get("decision") || "") !== "approve") {
+    return textResponse("Authorization cancelled", 403, [clearCsrf]);
+  }
+
+  let oauthRequest: AuthRequest;
+  try {
+    oauthRequest = JSON.parse(serialized) as AuthRequest;
+  } catch {
+    return textResponse("Invalid stored authorization request", 400, [clearCsrf]);
   }
 
   const state = crypto.randomUUID();
   await env.OAUTH_KV.put(`${GITHUB_STATE_PREFIX}${state}`, JSON.stringify(oauthRequest), {
-    expirationTtl: GITHUB_STATE_TTL_SECONDS,
+    expirationTtl: OAUTH_FLOW_TTL_SECONDS,
   });
+
+  const stateHash = await sha256Hex(state);
+  const stateCookie = secureCookie(STATE_COOKIE_NAME, stateHash, OAUTH_FLOW_TTL_SECONDS);
 
   const githubUrl = new URL("https://github.com/login/oauth/authorize");
   githubUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
@@ -239,7 +409,14 @@ async function beginGitHubAuthorization(request: Request, env: Env): Promise<Res
   githubUrl.searchParams.set("scope", "read:user user:email");
   githubUrl.searchParams.set("state", state);
 
-  return Response.redirect(githubUrl.toString(), 302);
+  const headers = new Headers({
+    "cache-control": "no-store",
+    location: githubUrl.toString(),
+    "referrer-policy": "no-referrer",
+  });
+  headers.append("set-cookie", clearCsrf);
+  headers.append("set-cookie", stateCookie);
+  return new Response(null, { status: 302, headers });
 }
 
 type GitHubUser = { id: number; login: string };
@@ -295,38 +472,52 @@ async function finishGitHubAuthorization(request: Request, env: Env): Promise<Re
   requireOAuthConfiguration(env);
 
   const url = new URL(request.url);
-  const githubError = url.searchParams.get("error");
-  if (githubError) {
-    return new Response(`GitHub authorization failed: ${githubError}`, { status: 403 });
-  }
-
-  const code = String(url.searchParams.get("code") || "").trim();
   const state = String(url.searchParams.get("state") || "").trim();
-  if (!code || !state) {
-    return new Response("Missing GitHub OAuth code/state", { status: 400 });
+  if (!state) {
+    return textResponse("Missing GitHub OAuth state", 400);
   }
 
   const stateKey = `${GITHUB_STATE_PREFIX}${state}`;
   const serialized = await env.OAUTH_KV.get(stateKey);
-  await env.OAUTH_KV.delete(stateKey);
   if (!serialized) {
-    return new Response("Expired or invalid GitHub OAuth state", { status: 400 });
+    return textResponse("Expired or invalid GitHub OAuth state", 400);
   }
+
+  const expectedStateHash = await sha256Hex(state);
+  const stateHashFromCookie = readCookie(request, STATE_COOKIE_NAME);
+  const clearStateCookie = secureCookie(STATE_COOKIE_NAME, "", 0);
+  if (!stateHashFromCookie || stateHashFromCookie !== expectedStateHash) {
+    return textResponse("OAuth state is not bound to this browser session", 400, [clearStateCookie]);
+  }
+
+  await env.OAUTH_KV.delete(stateKey);
 
   let oauthRequest: AuthRequest;
   try {
     oauthRequest = JSON.parse(serialized) as AuthRequest;
   } catch {
-    return new Response("Invalid stored OAuth request", { status: 400 });
+    return textResponse("Invalid stored OAuth request", 400, [clearStateCookie]);
+  }
+
+  const githubError = url.searchParams.get("error");
+  if (githubError) {
+    return textResponse(`GitHub authorization failed: ${githubError}`, 403, [clearStateCookie]);
+  }
+
+  const code = String(url.searchParams.get("code") || "").trim();
+  if (!code) {
+    return textResponse("Missing GitHub OAuth code", 400, [clearStateCookie]);
   }
 
   try {
     const githubAccessToken = await exchangeGitHubCode(code, env);
     const user = await fetchGitHubUser(githubAccessToken);
     if (user.id !== ALLOWED_GITHUB_USER_ID) {
-      return new Response("This GitHub account is not authorized for BBC KP Generator", {
-        status: 403,
-      });
+      return textResponse(
+        "This GitHub account is not authorized for BBC KP Generator",
+        403,
+        [clearStateCookie],
+      );
     }
 
     const requestedScopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
@@ -340,9 +531,15 @@ async function finishGitHubAuthorization(request: Request, env: Env): Promise<Re
       props: { githubUserId: user.id, githubLogin: user.login },
     });
 
-    return Response.redirect(redirectTo, 302);
+    const headers = new Headers({
+      "cache-control": "no-store",
+      location: redirectTo,
+      "referrer-policy": "no-referrer",
+    });
+    headers.append("set-cookie", clearStateCookie);
+    return new Response(null, { status: 302, headers });
   } catch (error) {
-    return new Response(error instanceof Error ? error.message : String(error), { status: 500 });
+    return textResponse(error instanceof Error ? error.message : String(error), 500, [clearStateCookie]);
   }
 }
 
@@ -369,10 +566,17 @@ const defaultHandler: ExportedHandler<Env> = {
             String(env.GITHUB_CLIENT_SECRET || "").trim(),
         ),
         oauthProvider: "github",
+        oauthSecurity: "consent+csrf+session-bound-state",
       });
     }
-    if (url.pathname === "/authorize") return beginGitHubAuthorization(request, env);
-    if (url.pathname === "/callback") return finishGitHubAuthorization(request, env);
+    if (url.pathname === "/authorize") {
+      if (request.method === "GET") return showAuthorizationConsent(request, env);
+      if (request.method === "POST") return handleAuthorizationConsent(request, env);
+      return new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST" } });
+    }
+    if (url.pathname === "/callback" && request.method === "GET") {
+      return finishGitHubAuthorization(request, env);
+    }
     return new Response("Not found", { status: 404 });
   },
 };
