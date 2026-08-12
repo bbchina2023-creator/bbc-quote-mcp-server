@@ -1,9 +1,9 @@
-// DEV-016.40 STAGING ONLY — isolated OAuth 2.1 MCP contour.
-// This branch must never target the production Worker bbc-quote-mcp-server.
+// DEV-016.40 PRODUCTION RC2 — deterministic promotion of the staging-tested OAuth MCP.
+// `versions upload` creates a version only; traffic remains on the existing deployment until an explicit deploy.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "bbc-quote-mcp-server-staging",
-  "main": "src/staging.ts",
+  "name": "bbc-quote-mcp-server",
+  "main": ".generated/production.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": [
     "nodejs_compat",
@@ -11,18 +11,33 @@
   ],
   "workers_dev": true,
   "preview_urls": true,
+  "keep_vars": true,
+
+  "build": {
+    "command": "npm run type-check:production"
+  },
 
   "observability": {
     "enabled": true
   },
 
-  "vars": {
-    "GITHUB_CLIENT_ID": "0v231ivNiSnfHvxPXYjG"
+  "secrets": {
+    "required": [
+      "BBC_BACKEND_URL",
+      "GITHUB_CLIENT_SECRET"
+    ]
   },
 
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV"
     }
-  ]
+  ],
+
+  "exports": {
+    "MyMCP": {
+      "type": "durable-object",
+      "state": "deleted"
+    }
+  }
 }
