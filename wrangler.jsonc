@@ -17,12 +17,13 @@
   },
 
   "vars": {
-    "GITHUB_CLIENT_ID": "0v231ivNiSnfHvxPXYjG"
+    "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG"
   },
 
   "kv_namespaces": [
     {
-      "binding": "OAUTH_KV"
+      "binding": "OAUTH_KV",
+      "id": "a4c1f60ed1244502be28a406b160d080"
     }
   ]
 }
