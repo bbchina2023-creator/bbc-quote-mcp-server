@@ -15,15 +15,15 @@ interface Env {
 }
 
 const SERVER_NAME = "BBC KP Generator";
-const SERVER_VERSION = "1.0.0-dev016.40-staging-secure1";
+const SERVER_VERSION = "1.0.0-dev016.40-staging-secure2";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
 const GITHUB_STATE_PREFIX = "bbc:oauth:github-state:";
 const CONSENT_STATE_PREFIX = "bbc:oauth:consent:";
 const OAUTH_FLOW_TTL_SECONDS = 10 * 60;
-const CSRF_COOKIE_NAME = "__Host-BBC_MCP_CSRF";
-const STATE_COOKIE_NAME = "__Host-BBC_MCP_STATE";
+const CSRF_COOKIE_PREFIX = "__Host-BBC_MCP_CSRF_";
+const STATE_COOKIE_PREFIX = "__Host-BBC_MCP_STATE_";
 const ALLOWED_GITHUB_USER_ID = 307006935;
 const SUPPORTED_SCOPES = ["quote.read", "quote.write", "quote.generate"];
 
@@ -247,6 +247,14 @@ function secureCookie(name: string, value: string, maxAge: number): string {
   return `${name}=${value}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
+function csrfCookieName(consentId: string): string {
+  return `${CSRF_COOKIE_PREFIX}${consentId}`;
+}
+
+function stateCookieName(state: string): string {
+  return `${STATE_COOKIE_PREFIX}${state}`;
+}
+
 function htmlHeaders(setCookies: string[] = []): Headers {
   const headers = new Headers({
     "cache-control": "no-store",
@@ -306,7 +314,7 @@ async function showAuthorizationConsent(request: Request, env: Env): Promise<Res
   });
 
   const csrfToken = crypto.randomUUID();
-  const csrfCookie = secureCookie(CSRF_COOKIE_NAME, csrfToken, OAUTH_FLOW_TTL_SECONDS);
+  const csrfCookie = secureCookie(csrfCookieName(consentId), csrfToken, OAUTH_FLOW_TTL_SECONDS);
   const requestedScopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
   const clientName =
     String(client?.clientName || client?.client_name || client?.name || "").trim() || clientId;
@@ -365,16 +373,17 @@ async function handleAuthorizationConsent(request: Request, env: Env): Promise<R
     return textResponse("Invalid consent form", 400);
   }
 
-  const csrfFromForm = String(formData.get("csrf_token") || "");
-  const csrfFromCookie = readCookie(request, CSRF_COOKIE_NAME);
-  const clearCsrf = secureCookie(CSRF_COOKIE_NAME, "", 0);
-  if (!csrfFromForm || !csrfFromCookie || csrfFromForm !== csrfFromCookie) {
-    return textResponse("CSRF validation failed", 400, [clearCsrf]);
-  }
-
   const consentId = String(formData.get("consent_id") || "").trim();
   if (!consentId) {
-    return textResponse("Missing consent state", 400, [clearCsrf]);
+    return textResponse("Missing consent state", 400);
+  }
+
+  const csrfName = csrfCookieName(consentId);
+  const csrfFromForm = String(formData.get("csrf_token") || "");
+  const csrfFromCookie = readCookie(request, csrfName);
+  const clearCsrf = secureCookie(csrfName, "", 0);
+  if (!csrfFromForm || !csrfFromCookie || csrfFromForm !== csrfFromCookie) {
+    return textResponse("CSRF validation failed", 400, [clearCsrf]);
   }
 
   const consentKey = `${CONSENT_STATE_PREFIX}${consentId}`;
@@ -401,7 +410,7 @@ async function handleAuthorizationConsent(request: Request, env: Env): Promise<R
   });
 
   const stateHash = await sha256Hex(state);
-  const stateCookie = secureCookie(STATE_COOKIE_NAME, stateHash, OAUTH_FLOW_TTL_SECONDS);
+  const stateCookie = secureCookie(stateCookieName(state), stateHash, OAUTH_FLOW_TTL_SECONDS);
 
   const githubUrl = new URL("https://github.com/login/oauth/authorize");
   githubUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
@@ -484,8 +493,9 @@ async function finishGitHubAuthorization(request: Request, env: Env): Promise<Re
   }
 
   const expectedStateHash = await sha256Hex(state);
-  const stateHashFromCookie = readCookie(request, STATE_COOKIE_NAME);
-  const clearStateCookie = secureCookie(STATE_COOKIE_NAME, "", 0);
+  const stateName = stateCookieName(state);
+  const stateHashFromCookie = readCookie(request, stateName);
+  const clearStateCookie = secureCookie(stateName, "", 0);
   if (!stateHashFromCookie || stateHashFromCookie !== expectedStateHash) {
     return textResponse("OAuth state is not bound to this browser session", 400, [clearStateCookie]);
   }
@@ -566,7 +576,7 @@ const defaultHandler: ExportedHandler<Env> = {
             String(env.GITHUB_CLIENT_SECRET || "").trim(),
         ),
         oauthProvider: "github",
-        oauthSecurity: "consent+csrf+session-bound-state",
+        oauthSecurity: "consent+csrf+session-bound-state+flow-isolated-cookies",
       });
     }
     if (url.pathname === "/authorize") {
