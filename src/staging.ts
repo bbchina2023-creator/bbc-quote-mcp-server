@@ -15,7 +15,7 @@ interface Env {
 }
 
 const SERVER_NAME = "BBC KP Generator";
-const SERVER_VERSION = "1.0.0-dev016.40-staging-secure2";
+const SERVER_VERSION = "1.0.0-dev016.40-staging-secure3";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
@@ -388,12 +388,12 @@ async function handleAuthorizationConsent(request: Request, env: Env): Promise<R
 
   const consentKey = `${CONSENT_STATE_PREFIX}${consentId}`;
   const serialized = await env.OAUTH_KV.get(consentKey);
-  await env.OAUTH_KV.delete(consentKey);
   if (!serialized) {
     return textResponse("Expired or invalid consent state", 400, [clearCsrf]);
   }
 
   if (String(formData.get("decision") || "") !== "approve") {
+    await env.OAUTH_KV.delete(consentKey);
     return textResponse("Authorization cancelled", 403, [clearCsrf]);
   }
 
@@ -405,9 +405,11 @@ async function handleAuthorizationConsent(request: Request, env: Env): Promise<R
   }
 
   const state = crypto.randomUUID();
-  await env.OAUTH_KV.put(`${GITHUB_STATE_PREFIX}${state}`, JSON.stringify(oauthRequest), {
-    expirationTtl: OAUTH_FLOW_TTL_SECONDS,
-  });
+  await env.OAUTH_KV.put(
+    `${GITHUB_STATE_PREFIX}${state}`,
+    JSON.stringify({ oauthRequest, consentId }),
+    { expirationTtl: OAUTH_FLOW_TTL_SECONDS },
+  );
 
   const stateHash = await sha256Hex(state);
   const stateCookie = secureCookie(stateCookieName(state), stateHash, OAUTH_FLOW_TTL_SECONDS);
@@ -503,10 +505,21 @@ async function finishGitHubAuthorization(request: Request, env: Env): Promise<Re
   await env.OAUTH_KV.delete(stateKey);
 
   let oauthRequest: AuthRequest;
+  let consentId = "";
   try {
-    oauthRequest = JSON.parse(serialized) as AuthRequest;
+    const parsed = JSON.parse(serialized) as any;
+    if (parsed && typeof parsed === "object" && parsed.oauthRequest) {
+      oauthRequest = parsed.oauthRequest as AuthRequest;
+      consentId = String(parsed.consentId || "").trim();
+    } else {
+      oauthRequest = parsed as AuthRequest;
+    }
   } catch {
     return textResponse("Invalid stored OAuth request", 400, [clearStateCookie]);
+  }
+
+  if (consentId) {
+    await env.OAUTH_KV.delete(`${CONSENT_STATE_PREFIX}${consentId}`);
   }
 
   const githubError = url.searchParams.get("error");
@@ -576,7 +589,7 @@ const defaultHandler: ExportedHandler<Env> = {
             String(env.GITHUB_CLIENT_SECRET || "").trim(),
         ),
         oauthProvider: "github",
-        oauthSecurity: "consent+csrf+session-bound-state+flow-isolated-cookies",
+        oauthSecurity: "consent+csrf+session-bound-state+flow-isolated-cookies+retry-safe-consent-state",
       });
     }
     if (url.pathname === "/authorize") {
