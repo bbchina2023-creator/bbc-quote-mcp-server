@@ -1,0 +1,16 @@
+// BBC КП Generator — FINAL DOCUMENT CONTOUR STAGING ONLY.
+// This config intentionally targets the isolated staging Worker.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bbc-quote-mcp-server-staging",
+  "main": "src/staging-contour.js",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": { "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG" },
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "a4c1f60ed1244502be28a406b160d080" }
+  ]
+}
