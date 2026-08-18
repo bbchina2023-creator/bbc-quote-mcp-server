@@ -4,9 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "deploy": "wrangler deploy",
-    "deploy:contour": "wrangler deploy -c wrangler.contour.jsonc",
-    "dry-run:contour": "wrangler deploy --dry-run -c wrangler.contour.jsonc",
+    "verify:release-c": "node --test test/*.test.js",
+    "deploy": "npm run verify:release-c && wrangler deploy",
+    "deploy:contour": "npm run verify:release-c && wrangler deploy -c wrangler.contour.jsonc",
+    "dry-run:contour": "npm run verify:release-c && wrangler deploy --dry-run -c wrangler.contour.jsonc",
     "dev": "wrangler dev",
     "dev:contour": "wrangler dev -c wrangler.contour.jsonc",
     "format": "oxfmt --write .",

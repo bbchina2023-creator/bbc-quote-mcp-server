@@ -3,8 +3,22 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const contour = fs.readFileSync(new URL("../src/staging-contour.js", import.meta.url), "utf8");
-const config = fs.readFileSync(new URL("../wrangler.contour.jsonc", import.meta.url), "utf8");
+const defaultConfig = fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+const contourConfig = fs.readFileSync(new URL("../wrangler.contour.jsonc", import.meta.url), "utf8");
 const durableObject = fs.readFileSync(new URL("../src/oauth-state-do.js", import.meta.url), "utf8");
+
+function assertReleaseCConfig(config) {
+  assert.match(config, /"name"\s*:\s*"bbc-quote-mcp-server-staging"/);
+  assert.match(config, /"main"\s*:\s*"src\/staging-contour\.js"/);
+  assert.match(config, /"binding"\s*:\s*"OAUTH_KV"/);
+  assert.match(config, /"name"\s*:\s*"OAUTH_STATE"/);
+  assert.match(config, /"class_name"\s*:\s*"OAuthStateDurableObject"/);
+  assert.match(config, /"exports"\s*:/);
+  assert.match(config, /"storage"\s*:\s*"sqlite"/);
+  assert.match(config, /"secrets"\s*:/);
+  assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*\]/);
+  assert.doesNotMatch(config, /"migrations"\s*:/);
+}
 
 test("custom one-time OAuth state no longer uses OAUTH_KV", () => {
   assert.doesNotMatch(contour, /createConsentRecord\(env\.OAUTH_KV/);
@@ -15,12 +29,12 @@ test("custom one-time OAuth state no longer uses OAUTH_KV", () => {
   assert.match(contour, /consumeGitHubStateRecord\(env\.OAUTH_STATE/);
 });
 
-test("OAuth provider KV remains configured while one-time state gets its own DO binding", () => {
-  assert.match(config, /"binding"\s*:\s*"OAUTH_KV"/);
-  assert.match(config, /"name"\s*:\s*"OAUTH_STATE"/);
-  assert.match(config, /"class_name"\s*:\s*"OAuthStateDurableObject"/);
-  assert.match(config, /"exports"\s*:/);
-  assert.match(config, /"storage"\s*:\s*"sqlite"/);
+test("default Cloudflare build config has the complete Release C contract", () => {
+  assertReleaseCConfig(defaultConfig);
+});
+
+test("explicit contour config has the same complete Release C contract", () => {
+  assertReleaseCConfig(contourConfig);
 });
 
 test("entrypoint exports the Durable Object class", () => {

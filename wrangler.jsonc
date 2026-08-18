@@ -15,6 +15,9 @@
   "vars": {
     "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG"
   },
+  "secrets": {
+    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL"]
+  },
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
