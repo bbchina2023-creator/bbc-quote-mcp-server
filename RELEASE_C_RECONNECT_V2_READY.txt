@@ -1,0 +1,2 @@
+BBC KP Generator Release C staging marker.
+Current branch tree is ready for deployment with src/staging-contour-reconnect-v2.js as the staging entrypoint in both wrangler.jsonc and wrangler.contour.jsonc.
