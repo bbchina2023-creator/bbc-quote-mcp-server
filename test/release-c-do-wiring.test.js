@@ -6,6 +6,7 @@ const contour = fs.readFileSync(new URL("../src/staging-contour.js", import.meta
 const defaultConfig = fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
 const contourConfig = fs.readFileSync(new URL("../wrangler.contour.jsonc", import.meta.url), "utf8");
 const durableObject = fs.readFileSync(new URL("../src/oauth-state-do.js", import.meta.url), "utf8");
+const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 function assertReleaseCConfig(config) {
   assert.match(config, /"name"\s*:\s*"bbc-quote-mcp-server-staging"/);
@@ -17,6 +18,7 @@ function assertReleaseCConfig(config) {
   assert.match(config, /"storage"\s*:\s*"sqlite"/);
   assert.match(config, /"secrets"\s*:/);
   assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*\]/);
+  assert.match(config, /global_fetch_strictly_public/);
   assert.doesNotMatch(config, /"migrations"\s*:/);
 }
 
@@ -45,4 +47,10 @@ test("entrypoint exports the Durable Object class", () => {
 test("health contract advertises Durable Object one-time state", () => {
   assert.match(contour, /DURABLE_OBJECT_ONE_TIME_STATE_V1/);
   assert.match(contour, /OAUTH_STATE_DURABLE_OBJECT/);
+});
+
+test("ChatGPT OAuth client compatibility is pinned to the verified provider generation", () => {
+  assert.equal(pkg.dependencies["@cloudflare/workers-oauth-provider"], "0.10.3");
+  assert.match(contour, /clientIdMetadataDocumentEnabled:\s*true/);
+  assert.match(contour, /clientRegistrationEndpoint:\s*"\/oauth\/register"/);
 });
