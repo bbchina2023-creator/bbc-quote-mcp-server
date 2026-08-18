@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
+    "deploy:contour": "wrangler deploy -c wrangler.contour.jsonc",
+    "dry-run:contour": "wrangler deploy --dry-run -c wrangler.contour.jsonc",
     "dev": "wrangler dev",
+    "dev:contour": "wrangler dev -c wrangler.contour.jsonc",
     "format": "oxfmt --write .",
     "lint:fix": "oxlint --fix",
     "start": "wrangler dev",
