@@ -3,7 +3,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server-staging",
-  "main": "src/staging-contour.js",
+  "main": "src/staging-contour-reconnect.js",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": [
     "nodejs_compat",
