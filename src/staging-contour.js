@@ -2,19 +2,33 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpHandler } from "agents/mcp";
 import { z } from "zod";
+import {
+  GITHUB_STATE_PREFIX,
+  OAUTH_FLOW_TTL_SECONDS,
+  STATE_COOKIE_NAME,
+  constantTimeEqual,
+  consumeConsentRecord,
+  createConsentRecord,
+  readCookie,
+  safeOAuthLog,
+  secureCookie,
+  sha256Hex,
+} from "./oauth-security.js";
 
 const SERVER_NAME = "BBC KP Generator — Document Contour";
 const SERVER_VERSION = "1.0.0-contour-v1-staging";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
-const GITHUB_STATE_PREFIX = "bbc:oauth:github-state:";
-const CONSENT_STATE_PREFIX = "bbc:oauth:consent:";
-const OAUTH_FLOW_TTL_SECONDS = 10 * 60;
-const CSRF_COOKIE_PREFIX = "__Host-BBC_MCP_CSRF_";
-const STATE_COOKIE_PREFIX = "__Host-BBC_MCP_STATE_";
 const ALLOWED_GITHUB_USER_ID = 307006935;
-const SUPPORTED_SCOPES = ["quote.read", "quote.write", "quote.generate"];
+export const SUPPORTED_SCOPES = ["quote.read", "quote.write", "quote.generate"];
+export const TOOL_CONTRACT = [
+  "validateCanonicalDeal",
+  "recalculateDeal",
+  "getVerifiedSnapshot",
+  "generateQuote",
+  "getDealStatus",
+];
 
 const canonicalDealSchema = z.record(z.string(), z.unknown());
 
@@ -181,22 +195,6 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function readCookie(request, name) {
-  const cookieHeader = request.headers.get("cookie") || "";
-  for (const rawCookie of cookieHeader.split(";")) {
-    const cookie = rawCookie.trim();
-    const separator = cookie.indexOf("=");
-    if (separator >= 0 && cookie.slice(0, separator) === name) return cookie.slice(separator + 1);
-  }
-  return null;
-}
-
-function secureCookie(name, value, maxAge) {
-  return `${name}=${value}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
-}
-function csrfCookieName(consentId) { return `${CSRF_COOKIE_PREFIX}${consentId}`; }
-function stateCookieName(state) { return `${STATE_COOKIE_PREFIX}${state}`; }
-
 function textResponse(body, status, setCookies = []) {
   const headers = new Headers({
     "cache-control": "no-store",
@@ -221,11 +219,6 @@ function htmlResponse(body, setCookies = []) {
   return new Response(body, { status: 200, headers });
 }
 
-async function sha256Hex(value) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 async function showAuthorizationConsent(request, env) {
   requireOAuthConfiguration(env);
   let oauthRequest;
@@ -236,13 +229,11 @@ async function showAuthorizationConsent(request, env) {
   let client;
   try { client = await env.OAUTH_PROVIDER.lookupClient(clientId); }
   catch { return textResponse("Unknown OAuth client", 400); }
-  const consentId = crypto.randomUUID();
-  await env.OAUTH_KV.put(`${CONSENT_STATE_PREFIX}${consentId}`, JSON.stringify(oauthRequest), { expirationTtl: OAUTH_FLOW_TTL_SECONDS });
-  const csrfToken = crypto.randomUUID();
-  const csrfCookie = secureCookie(csrfCookieName(consentId), csrfToken, OAUTH_FLOW_TTL_SECONDS);
+  const { consentId, csrfToken } = await createConsentRecord(env.OAUTH_KV, oauthRequest);
   const scopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
   const clientName = String(client?.clientName || client?.client_name || client?.name || clientId).trim();
-  return htmlResponse(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BBC КП — доступ</title><style>body{font-family:system-ui,sans-serif;background:#f6f7f9;color:#1f2937}main{max-width:680px;margin:8vh auto;background:#fff;padding:32px;border-radius:16px}button{padding:11px 18px;border:0;border-radius:9px;margin-right:10px}.ok{background:#111827;color:#fff}</style></head><body><main><h1>Разрешить доступ к BBC KP Generator?</h1><p>Клиент: <strong>${escapeHtml(clientName)}</strong></p><p>Права: ${escapeHtml(scopes.join(", ") || "нет")}</p><form method="post" action="/authorize"><input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}"><input type="hidden" name="consent_id" value="${escapeHtml(consentId)}"><button class="ok" name="decision" value="approve">Разрешить</button><button name="decision" value="deny">Отменить</button></form></main></body></html>`, [csrfCookie]);
+  safeOAuthLog("oauth.authorize.get.ready", request, { consentStored: true, csrfCookieRequired: false });
+  return htmlResponse(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BBC КП — доступ</title><style>body{font-family:system-ui,sans-serif;background:#f6f7f9;color:#1f2937}main{max-width:680px;margin:8vh auto;background:#fff;padding:32px;border-radius:16px}button{padding:11px 18px;border:0;border-radius:9px;margin-right:10px}.ok{background:#111827;color:#fff}</style></head><body><main><h1>Разрешить доступ к BBC KP Generator?</h1><p>Клиент: <strong>${escapeHtml(clientName)}</strong></p><p>Права: ${escapeHtml(scopes.join(", ") || "нет")}</p><form method="post" action="/authorize"><input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}"><input type="hidden" name="consent_id" value="${escapeHtml(consentId)}"><button class="ok" name="decision" value="approve">Разрешить</button><button name="decision" value="deny">Отменить</button></form></main></body></html>`);
 }
 
 async function handleAuthorizationConsent(request, env) {
@@ -252,32 +243,28 @@ async function handleAuthorizationConsent(request, env) {
   catch { return textResponse("Invalid consent form", 400); }
   const consentId = String(formData.get("consent_id") || "").trim();
   if (!consentId) return textResponse("Missing consent state", 400);
-  const csrfName = csrfCookieName(consentId);
   const csrfFromForm = String(formData.get("csrf_token") || "");
-  const csrfFromCookie = readCookie(request, csrfName);
-  const clearCsrf = secureCookie(csrfName, "", 0);
-  if (!csrfFromForm || !csrfFromCookie || csrfFromForm !== csrfFromCookie) return textResponse("CSRF validation failed", 400, [clearCsrf]);
-  const consentKey = `${CONSENT_STATE_PREFIX}${consentId}`;
-  const serialized = await env.OAUTH_KV.get(consentKey);
-  if (!serialized) return textResponse("Expired or invalid consent state", 400, [clearCsrf]);
+  const consent = await consumeConsentRecord(env.OAUTH_KV, consentId, csrfFromForm, request, MCP_ORIGIN);
+  safeOAuthLog("oauth.authorize.post.validated", request, {
+    consentIdPresent: Boolean(consentId),
+    csrfTokenPresent: Boolean(csrfFromForm),
+    validationResult: consent.ok ? "accepted" : consent.reason,
+  });
+  if (!consent.ok) return textResponse("CSRF validation failed", 400);
   if (String(formData.get("decision") || "") !== "approve") {
-    await env.OAUTH_KV.delete(consentKey);
-    return textResponse("Authorization cancelled", 403, [clearCsrf]);
+    return textResponse("Authorization cancelled", 403);
   }
-  let oauthRequest;
-  try { oauthRequest = JSON.parse(serialized); }
-  catch { return textResponse("Invalid stored authorization request", 400, [clearCsrf]); }
+  const oauthRequest = consent.oauthRequest;
   const state = crypto.randomUUID();
-  await env.OAUTH_KV.put(`${GITHUB_STATE_PREFIX}${state}`, JSON.stringify({ oauthRequest, consentId }), { expirationTtl: OAUTH_FLOW_TTL_SECONDS });
+  await env.OAUTH_KV.put(`${GITHUB_STATE_PREFIX}${state}`, JSON.stringify({ oauthRequest }), { expirationTtl: OAUTH_FLOW_TTL_SECONDS });
   const stateHash = await sha256Hex(state);
-  const stateCookie = secureCookie(stateCookieName(state), stateHash, OAUTH_FLOW_TTL_SECONDS);
+  const stateCookie = secureCookie(STATE_COOKIE_NAME, stateHash, OAUTH_FLOW_TTL_SECONDS);
   const githubUrl = new URL("https://github.com/login/oauth/authorize");
   githubUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
   githubUrl.searchParams.set("redirect_uri", GITHUB_CALLBACK);
   githubUrl.searchParams.set("scope", "read:user user:email");
   githubUrl.searchParams.set("state", state);
   const headers = new Headers({ location: githubUrl.toString(), "cache-control": "no-store", "referrer-policy": "no-referrer" });
-  headers.append("set-cookie", clearCsrf);
   headers.append("set-cookie", stateCookie);
   return new Response(null, { status: 302, headers });
 }
@@ -311,16 +298,14 @@ async function finishGitHubAuthorization(request, env) {
   const serialized = await env.OAUTH_KV.get(stateKey);
   if (!serialized) return textResponse("Expired or invalid GitHub OAuth state", 400);
   const expectedStateHash = await sha256Hex(state);
-  const stateName = stateCookieName(state);
-  const stateHashFromCookie = readCookie(request, stateName);
-  const clearStateCookie = secureCookie(stateName, "", 0);
-  if (!stateHashFromCookie || stateHashFromCookie !== expectedStateHash) return textResponse("OAuth state is not bound to this browser session", 400, [clearStateCookie]);
+  const stateHashFromCookie = readCookie(request, STATE_COOKIE_NAME);
+  const clearStateCookie = secureCookie(STATE_COOKIE_NAME, "", 0);
+  if (!stateHashFromCookie || !constantTimeEqual(stateHashFromCookie, expectedStateHash)) return textResponse("OAuth state is not bound to this browser session", 400, [clearStateCookie]);
   await env.OAUTH_KV.delete(stateKey);
   let stored;
   try { stored = JSON.parse(serialized); }
   catch { return textResponse("Invalid stored OAuth request", 400, [clearStateCookie]); }
   const oauthRequest = stored?.oauthRequest || stored;
-  if (stored?.consentId) await env.OAUTH_KV.delete(`${CONSENT_STATE_PREFIX}${stored.consentId}`);
   const githubError = url.searchParams.get("error");
   if (githubError) return textResponse(`GitHub authorization failed: ${githubError}`, 403, [clearStateCookie]);
   const code = String(url.searchParams.get("code") || "").trim();
@@ -360,13 +345,15 @@ const defaultHandler = {
         ok: true,
         service: SERVER_NAME,
         version: SERVER_VERSION,
-        contourVersion: "1.0.0",
+        contourVersion: "1.0.1",
+        oauthSecurity: "SERVER_SIDE_ONE_TIME_CSRF_V1",
+        workerEntrypoint: "src/staging-contour.js",
         environment: "staging",
         origin: MCP_ORIGIN,
         backendConfigured: Boolean(String(env.BBC_BACKEND_URL || "").trim()),
         oauthConfigured: Boolean(String(env.GITHUB_CLIENT_ID || "").trim() && String(env.GITHUB_CLIENT_SECRET || "").trim()),
         oauthProvider: "github",
-        toolContract: ["validateCanonicalDeal", "recalculateDeal", "getVerifiedSnapshot", "generateQuote", "getDealStatus"],
+        toolContract: TOOL_CONTRACT,
       });
     }
     if (url.pathname === "/authorize") {
