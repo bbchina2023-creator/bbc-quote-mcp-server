@@ -12,5 +12,16 @@
   "vars": { "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG" },
   "kv_namespaces": [
     { "binding": "OAUTH_KV", "id": "a4c1f60ed1244502be28a406b160d080" }
-  ]
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "OAUTH_STATE", "class_name": "OAuthStateDurableObject" }
+    ]
+  },
+  "exports": {
+    "OAuthStateDurableObject": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  }
 }

@@ -30,43 +30,73 @@ export function validateConsentRequestHeaders(request, allowedOrigin) {
   return { ok: true, reason: origin ? "same_origin" : "synchronizer_token" };
 }
 
-export async function createConsentRecord(kv, oauthRequest, ttlSeconds = OAUTH_FLOW_TTL_SECONDS) {
+function getOneTimeStateStub(stateNamespace, objectName) {
+  if (!stateNamespace || typeof stateNamespace.idFromName !== "function" || typeof stateNamespace.get !== "function") {
+    throw new Error("OAUTH_STATE Durable Object binding is not configured");
+  }
+  return stateNamespace.get(stateNamespace.idFromName(objectName));
+}
+
+function expiryFromTtl(ttlSeconds) {
+  const ttl = Number(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 0) throw new Error("OAuth state TTL is invalid");
+  return Date.now() + (ttl * 1000);
+}
+
+export async function createConsentRecord(stateNamespace, oauthRequest, ttlSeconds = OAUTH_FLOW_TTL_SECONDS) {
   const consentId = crypto.randomUUID();
   const csrfToken = crypto.randomUUID();
   const csrfHash = await sha256Hex(csrfToken);
-  await kv.put(
-    `${CONSENT_STATE_PREFIX}${consentId}`,
-    JSON.stringify({ oauthRequest, csrfHash, createdAt: Date.now() }),
-    { expirationTtl: ttlSeconds },
+  await getOneTimeStateStub(stateNamespace, `${CONSENT_STATE_PREFIX}${consentId}`).putState(
+    { kind: "consent", oauthRequest, csrfHash, createdAt: Date.now() },
+    expiryFromTtl(ttlSeconds),
   );
   return { consentId, csrfToken };
 }
 
-export async function consumeConsentRecord(kv, consentId, csrfToken, request, allowedOrigin) {
+export async function consumeConsentRecord(stateNamespace, consentId, csrfToken, request, allowedOrigin) {
   if (!consentId || !csrfToken) return { ok: false, reason: "missing" };
 
   const headerValidation = validateConsentRequestHeaders(request, allowedOrigin);
   if (!headerValidation.ok) return headerValidation;
 
-  const key = `${CONSENT_STATE_PREFIX}${consentId}`;
-  const serialized = await kv.get(key);
-  if (!serialized) return { ok: false, reason: "expired_or_replayed" };
-
-  // A consent challenge is single-use. Consume it before checking the answer so
-  // a failed guess cannot be retried against the same authorization request.
-  await kv.delete(key);
-
-  let record;
-  try {
-    record = JSON.parse(serialized);
-  } catch {
-    return { ok: false, reason: "invalid_record" };
-  }
-
   const submittedHash = await sha256Hex(csrfToken);
-  if (!constantTimeEqual(record.csrfHash, submittedHash)) return { ok: false, reason: "mismatch" };
-  if (!record.oauthRequest) return { ok: false, reason: "invalid_record" };
+  const consumed = await getOneTimeStateStub(
+    stateNamespace,
+    `${CONSENT_STATE_PREFIX}${consentId}`,
+  ).consumeState(submittedHash);
+
+  if (!consumed?.ok) return { ok: false, reason: consumed?.reason || "expired_or_replayed" };
+  const record = consumed.record;
+  if (record?.kind !== "consent" || !record.oauthRequest) return { ok: false, reason: "invalid_record" };
   return { ok: true, oauthRequest: record.oauthRequest, validation: headerValidation.reason };
+}
+
+export async function createGitHubStateRecord(
+  stateNamespace,
+  state,
+  oauthRequest,
+  ttlSeconds = OAUTH_FLOW_TTL_SECONDS,
+) {
+  if (!state) throw new Error("GitHub OAuth state is required");
+  const stateHash = await sha256Hex(state);
+  await getOneTimeStateStub(stateNamespace, `${GITHUB_STATE_PREFIX}${state}`).putState(
+    { kind: "github", oauthRequest, csrfHash: stateHash, createdAt: Date.now() },
+    expiryFromTtl(ttlSeconds),
+  );
+  return { stateHash };
+}
+
+export async function consumeGitHubStateRecord(stateNamespace, state, expectedStateHash) {
+  if (!state || !expectedStateHash) return { ok: false, reason: "missing" };
+  const consumed = await getOneTimeStateStub(
+    stateNamespace,
+    `${GITHUB_STATE_PREFIX}${state}`,
+  ).consumeState(expectedStateHash);
+  if (!consumed?.ok) return { ok: false, reason: consumed?.reason || "expired_or_replayed" };
+  const record = consumed.record;
+  if (record?.kind !== "github" || !record.oauthRequest) return { ok: false, reason: "invalid_record" };
+  return { ok: true, oauthRequest: record.oauthRequest };
 }
 
 export function readCookie(request, name) {
