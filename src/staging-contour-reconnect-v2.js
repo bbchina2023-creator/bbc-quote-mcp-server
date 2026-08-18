@@ -1,8 +1,8 @@
 import baseWorker from "./staging-contour.js";
 
+const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const CSRF_COOKIE_PREFIX = "__Host-BBC_MCP_CSRF_";
 const STATE_COOKIE_PREFIX = "__Host-BBC_MCP_STATE_";
-const COMPAT_CSRF_PREFIX = "bbc:oauth:compat:csrf:";
 const COMPAT_STATE_PREFIX = "bbc:oauth:compat:state:";
 const FLOW_TTL_SECONDS = 10 * 60;
 
@@ -49,31 +49,19 @@ function encodeFormData(formData) {
   return body;
 }
 
+function isTrustedSameOriginConsentPost(request) {
+  const origin = String(request.headers.get("origin") || "").trim();
+  if (origin !== MCP_ORIGIN) return false;
+
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  if (fetchSite && fetchSite !== "same-origin") return false;
+
+  return true;
+}
+
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function extractHiddenValue(html, name) {
-  const pattern = new RegExp(`<input[^>]+name=["']${name}["'][^>]+value=["']([^"']+)["']`, "i");
-  const match = String(html || "").match(pattern);
-  return match ? match[1] : "";
-}
-
-async function handleAuthorizeGet(request, env, ctx) {
-  const response = await baseWorker.fetch(request, env, ctx);
-  if (!response.ok) return response;
-  const html = await response.clone().text();
-  const consentId = extractHiddenValue(html, "consent_id");
-  const csrfToken = extractHiddenValue(html, "csrf_token");
-  if (consentId && csrfToken) {
-    await env.OAUTH_KV.put(
-      `${COMPAT_CSRF_PREFIX}${consentId}`,
-      JSON.stringify({ csrfToken }),
-      { expirationTtl: FLOW_TTL_SECONDS },
-    );
-  }
-  return response;
 }
 
 async function handleAuthorizePost(request, env, ctx) {
@@ -88,23 +76,34 @@ async function handleAuthorizePost(request, env, ctx) {
   const csrfFromForm = String(formData.get("csrf_token") || "").trim();
   if (!consentId || !csrfFromForm) return baseWorker.fetch(request, env, ctx);
 
-  const compatRaw = await env.OAUTH_KV.get(`${COMPAT_CSRF_PREFIX}${consentId}`);
-  let compat = null;
-  try { compat = compatRaw ? JSON.parse(compatRaw) : null; } catch { compat = null; }
-  if (!compat || compat.csrfToken !== csrfFromForm) {
-    return new Response("CSRF validation failed", {
-      status: 400,
-      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-    });
-  }
-
   const csrfCookieName = `${CSRF_COOKIE_PREFIX}${consentId}`;
+  const csrfFromCookie = readCookie(request, csrfCookieName);
+
+  // Normal path: the browser preserved the HttpOnly CSRF cookie set by the
+  // authorization page. Do not add any compatibility behavior in this case.
   let repairedRequest = request;
-  if (readCookie(request, csrfCookieName) !== csrfFromForm) {
-    repairedRequest = cloneRequestWithCookie(request, csrfCookieName, csrfFromForm, encodeFormData(formData));
+
+  // ChatGPT reconnect can lose the short-lived consent cookie between the
+  // authorization GET and same-origin form POST. In that one case, recover the
+  // cookie only when the browser proves the POST originated from this exact
+  // Worker origin. Referrer is intentionally not required because the base
+  // authorization response sets Referrer-Policy: no-referrer.
+  if (csrfFromCookie !== csrfFromForm) {
+    if (!isTrustedSameOriginConsentPost(request)) {
+      return baseWorker.fetch(request, env, ctx);
+    }
+    repairedRequest = cloneRequestWithCookie(
+      request,
+      csrfCookieName,
+      csrfFromForm,
+      encodeFormData(formData),
+    );
   }
 
   const response = await baseWorker.fetch(repairedRequest, env, ctx);
+
+  // Preserve a server-side callback marker as a secondary recovery path if a
+  // browser later loses the state-binding cookie on the GitHub round trip.
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get("location");
     if (location) {
@@ -121,10 +120,11 @@ async function handleAuthorizePost(request, env, ctx) {
           }
         }
       } catch {
+        // Base response remains authoritative.
       }
     }
   }
-  await env.OAUTH_KV.delete(`${COMPAT_CSRF_PREFIX}${consentId}`);
+
   return response;
 }
 
@@ -136,6 +136,10 @@ async function handleCallback(request, env, ctx) {
   const stateCookieName = `${STATE_COOKIE_PREFIX}${state}`;
   const expectedHash = await sha256Hex(state);
   let repairedRequest = request;
+
+  // Prefer the real browser-bound state cookie. Only use the compatibility
+  // marker when that cookie is missing and the marker from the successful
+  // same-origin consent POST is present.
   if (readCookie(request, stateCookieName) !== expectedHash) {
     const marker = await env.OAUTH_KV.get(`${COMPAT_STATE_PREFIX}${state}`);
     if (marker) repairedRequest = cloneRequestWithCookie(request, stateCookieName, expectedHash);
@@ -153,7 +157,7 @@ async function handleHealth(request, env, ctx) {
     const payload = await response.clone().json();
     return Response.json({
       ...payload,
-      reconnectCompatibility: "SERVER_SIDE_CSRF_AND_STATE_V2",
+      reconnectCompatibility: "SAME_ORIGIN_CSRF_RECOVERY_V2_1",
       workerEntrypoint: "src/staging-contour-reconnect-v2.js",
     }, { status: response.status, headers: { "cache-control": "no-store" } });
   } catch {
@@ -165,7 +169,6 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/health" && request.method === "GET") return handleHealth(request, env, ctx);
-    if (url.pathname === "/authorize" && request.method === "GET") return handleAuthorizeGet(request, env, ctx);
     if (url.pathname === "/authorize" && request.method === "POST") return handleAuthorizePost(request, env, ctx);
     if (url.pathname === "/callback" && request.method === "GET") return handleCallback(request, env, ctx);
     return baseWorker.fetch(request, env, ctx);
