@@ -24,7 +24,8 @@ const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
 const ALLOWED_GITHUB_USER_ID = 307006935;
-export const SUPPORTED_SCOPES = ["quote.read", "quote.write", "quote.generate"];
+export const RESOURCE_SCOPES = ["quote.read", "quote.write", "quote.generate"];
+export const SUPPORTED_SCOPES = [...RESOURCE_SCOPES, "offline_access"];
 export const TOOL_CONTRACT = [
   "validateCanonicalDeal",
   "recalculateDeal",
@@ -377,12 +378,13 @@ export default new OAuthProvider({
   tokenEndpoint: "/oauth/token",
   clientRegistrationEndpoint: "/oauth/register",
   scopesSupported: SUPPORTED_SCOPES,
+  refreshTokenTTL: 2592000,
   allowPlainPKCE: false,
   clientIdMetadataDocumentEnabled: true,
   resourceMetadata: {
     resource: MCP_RESOURCE,
     authorization_servers: [MCP_ORIGIN],
-    scopes_supported: SUPPORTED_SCOPES,
+    scopes_supported: RESOURCE_SCOPES,
     bearer_methods_supported: ["header"],
     resource_name: SERVER_NAME,
   },
