@@ -1,25 +1,20 @@
-// DEV-016.40 STAGING ONLY — isolated OAuth 2.1 MCP contour.
+// BBC КП Generator — FINAL DOCUMENT CONTOUR STAGING ONLY.
 // This branch must never target the production Worker bbc-quote-mcp-server.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server-staging",
-  "main": "src/staging.ts",
+  "main": "src/staging-contour.js",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": [
     "nodejs_compat",
     "global_fetch_strictly_public"
   ],
   "workers_dev": true,
-  "preview_urls": true,
-
-  "observability": {
-    "enabled": true
-  },
-
+  "preview_urls": false,
+  "observability": { "enabled": true },
   "vars": {
     "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG"
   },
-
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
