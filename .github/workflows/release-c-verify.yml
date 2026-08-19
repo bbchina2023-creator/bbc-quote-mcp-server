@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - release-c-rc-corr-01
+  pull_request:
+    branches:
+      - release-c-do-v1
   workflow_dispatch:
 
 permissions:
