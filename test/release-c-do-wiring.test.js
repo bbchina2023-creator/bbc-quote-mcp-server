@@ -63,12 +63,16 @@ test("backend authentication uses a separate body token secret", () => {
   assert.doesNotMatch(contour, /searchParams\.set\([^\n]*token/i);
 });
 
-test("per-tool scopes use verified SDK v1 authInfo", () => {
-  assert.match(contour, /extra\?\.authInfo\?\.scopes/);
-  assert.match(contour, /validateCanonicalDeal:\s*"quote\.read"/);
-  assert.match(contour, /recalculateDeal:\s*"quote\.write"/);
-  assert.match(contour, /generateQuote:\s*"quote\.generate"/);
-  assert.match(contour, /async \(args, extra\)/);
+test("per-tool scopes come from the validated OAuth access token", () => {
+  assert.match(contour, /class McpApiHandler extends WorkerEntrypoint/);
+  assert.match(contour, /OAUTH_PROVIDER\.unwrapToken\(match\[1\]\)/);
+  assert.match(contour, /Array\.isArray\(tokenSummary\.scope\)/);
+  assert.match(contour, /createServer\(this\.env, tokenSummary\.scope\)/);
+  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.read"\)/);
+  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.write"\)/);
+  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.generate"\)/);
+  assert.doesNotMatch(contour, /extra\?\.authInfo\?\.scopes/);
+  assert.doesNotMatch(contour, /resourceScopes/);
 });
 
 test("health contract advertises Durable Object state and Worker version metadata", () => {
