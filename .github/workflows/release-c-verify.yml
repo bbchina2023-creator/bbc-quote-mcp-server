@@ -29,6 +29,8 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Run Release C contract tests
         run: npm run verify:release-c
       - name: Wrangler dry-run
