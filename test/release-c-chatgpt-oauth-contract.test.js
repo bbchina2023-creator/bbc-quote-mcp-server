@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const contour = fs.readFileSync(new URL("../src/staging-contour.js", import.meta.url), "utf8");
+const contour = fs.readFileSync(new URL("../src/staging-contour-rc.js", import.meta.url), "utf8");
 const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 const expectedTools = [
