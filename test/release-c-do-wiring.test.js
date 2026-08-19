@@ -16,8 +16,10 @@ function assertReleaseCConfig(config) {
   assert.match(config, /"class_name"\s*:\s*"OAuthStateDurableObject"/);
   assert.match(config, /"exports"\s*:/);
   assert.match(config, /"storage"\s*:\s*"sqlite"/);
+  assert.match(config, /"version_metadata"\s*:/);
+  assert.match(config, /"binding"\s*:\s*"CF_VERSION_METADATA"/);
   assert.match(config, /"secrets"\s*:/);
-  assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*\]/);
+  assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*,\s*"BBC_BACKEND_TOKEN"\s*\]/);
   assert.match(config, /global_fetch_strictly_public/);
   assert.doesNotMatch(config, /"migrations"\s*:/);
 }
@@ -44,9 +46,11 @@ test("entrypoint exports the Durable Object class", () => {
   assert.match(durableObject, /export class OAuthStateDurableObject extends DurableObject/);
 });
 
-test("health contract advertises Durable Object one-time state", () => {
+test("health contract advertises Durable Object one-time state and Worker version metadata", () => {
   assert.match(contour, /DURABLE_OBJECT_ONE_TIME_STATE_V1/);
   assert.match(contour, /OAUTH_STATE_DURABLE_OBJECT/);
+  assert.match(contour, /CF_VERSION_METADATA/);
+  assert.match(contour, /releaseId:\s*RELEASE_ID/);
 });
 
 test("ChatGPT OAuth client compatibility is pinned to the verified provider generation", () => {
