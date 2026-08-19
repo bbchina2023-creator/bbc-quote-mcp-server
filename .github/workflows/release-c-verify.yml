@@ -1,0 +1,28 @@
+name: Release C Verify
+
+on:
+  push:
+    branches:
+      - release-c-rc-corr-01
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Run Release C contract tests
+        run: npm run verify:release-c
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run -c wrangler.contour.jsonc
