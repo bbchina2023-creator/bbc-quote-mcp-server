@@ -21,9 +21,10 @@ import {
 export { OAuthStateDurableObject } from "./oauth-state-do.js";
 
 const SERVER_NAME = "BBC KP Generator — Document Contour";
-const SERVER_VERSION = "1.0.0-contour-v1-staging-rc-corr-01";
-const RELEASE_ID = "RELEASE_C_RC_CORR_01";
-const SCOPE_ENFORCEMENT = "OAUTH_PROPS_SCOPE_V1";
+const SERVER_VERSION = "1.0.0-contour-v1-staging";
+const RELEASE_ID = "RC-CORR-01D";
+const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
+const SCOPE_ENFORCEMENT = "OAUTH_PROVIDER_UNWRAP_TOKEN_SCOPE_V1";
 const BACKEND_TOKEN_MODE = "JSON_BODY_SECRET";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
@@ -103,14 +104,14 @@ function errorResult(error) {
   };
 }
 
-function requireToolScope(authProps, requiredScope) {
-  const granted = Array.isArray(authProps?.resourceScopes) ? authProps.resourceScopes : [];
+function requireToolScope(effectiveScopes, requiredScope) {
+  const granted = Array.isArray(effectiveScopes) ? effectiveScopes : [];
   if (!granted.includes(requiredScope)) {
     throw new Error(`OAuth scope ${requiredScope} is required`);
   }
 }
 
-function createServer(env, authProps) {
+function createServer(env, effectiveScopes) {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
 
   server.registerTool(
@@ -126,7 +127,7 @@ function createServer(env, authProps) {
     },
     async (args) => {
       try {
-        requireToolScope(authProps, "quote.read");
+        requireToolScope(effectiveScopes, "quote.read");
         return successResult(await callBackend(env, "validateCanonicalDeal", args));
       } catch (error) { return errorResult(error); }
     },
@@ -147,7 +148,7 @@ function createServer(env, authProps) {
     },
     async (args) => {
       try {
-        requireToolScope(authProps, "quote.write");
+        requireToolScope(effectiveScopes, "quote.write");
         return successResult(await callBackend(env, "recalculateDeal", args));
       } catch (error) { return errorResult(error); }
     },
@@ -167,7 +168,7 @@ function createServer(env, authProps) {
     },
     async (args) => {
       try {
-        requireToolScope(authProps, "quote.read");
+        requireToolScope(effectiveScopes, "quote.read");
         if (!args.snapshotId && !args.dealId) throw new Error("snapshotId or dealId is required");
         return successResult(await callBackend(env, "getVerifiedSnapshot", args));
       } catch (error) { return errorResult(error); }
@@ -190,7 +191,7 @@ function createServer(env, authProps) {
     },
     async (args) => {
       try {
-        requireToolScope(authProps, "quote.generate");
+        requireToolScope(effectiveScopes, "quote.generate");
         return successResult(await callBackend(env, "generateQuote", args));
       } catch (error) { return errorResult(error); }
     },
@@ -200,13 +201,13 @@ function createServer(env, authProps) {
     "getDealStatus",
     {
       title: "Получить статус сделки",
-      description: "Returns the latest verified Snapshot v2 and latest completed quote artifacts for the specified dealId.",
+      description: "Returns the latest verified Snapshot v2 and quote artifacts bound to that exact latest snapshot for the specified dealId.",
       inputSchema: { dealId: z.string().min(1) },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     async (args) => {
       try {
-        requireToolScope(authProps, "quote.read");
+        requireToolScope(effectiveScopes, "quote.read");
         return successResult(await callBackend(env, "getDealStatus", args));
       } catch (error) { return errorResult(error); }
     },
@@ -348,13 +349,12 @@ async function finishGitHubAuthorization(request, env) {
     if (user.id !== ALLOWED_GITHUB_USER_ID) return textResponse("This GitHub account is not authorized for BBC KP Generator", 403, [clearStateCookie]);
     const requestedScopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
     const grantedScopes = requestedScopes.filter((scope) => SUPPORTED_SCOPES.includes(scope));
-    const resourceScopes = grantedScopes.filter((scope) => RESOURCE_SCOPES.includes(scope));
     const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
       request: oauthRequest,
       userId: String(user.id),
       metadata: { identityProvider: "github", githubLogin: user.login },
       scope: grantedScopes,
-      props: { githubUserId: user.id, githubLogin: user.login, resourceScopes },
+      props: { githubUserId: user.id, githubLogin: user.login },
     });
     const headers = new Headers({ location: redirectTo, "cache-control": "no-store", "referrer-policy": "no-referrer" });
     headers.append("set-cookie", clearStateCookie);
@@ -366,8 +366,14 @@ async function finishGitHubAuthorization(request, env) {
 
 export class McpApiHandler extends WorkerEntrypoint {
   async fetch(request) {
-    const authProps = this.ctx?.props || {};
-    return createMcpHandler(createServer(this.env, authProps))(request, this.env, this.ctx);
+    const authorization = String(request.headers.get("authorization") || "");
+    const match = /^Bearer\s+(.+)$/i.exec(authorization);
+    if (!match) return textResponse("Unauthorized", 401);
+    const tokenSummary = await this.env.OAUTH_PROVIDER.unwrapToken(match[1]);
+    if (!tokenSummary || !Array.isArray(tokenSummary.scope)) {
+      return textResponse("Unauthorized", 401);
+    }
+    return createMcpHandler(createServer(this.env, tokenSummary.scope))(request, this.env, this.ctx);
   }
 }
 
@@ -382,24 +388,24 @@ const defaultHandler = {
         version: SERVER_VERSION,
         releaseId: RELEASE_ID,
         contourVersion: "1.0.3",
+        canonicalSchema: CANONICAL_SCHEMA_ID,
         oauthSecurity: "DURABLE_OBJECT_ONE_TIME_STATE_V1",
         oneTimeStateStorage: "OAUTH_STATE_DURABLE_OBJECT",
         oauthProviderStorage: "OAUTH_KV",
         scopeEnforcement: SCOPE_ENFORCEMENT,
         backendTokenMode: BACKEND_TOKEN_MODE,
         workerEntrypoint: "src/staging-contour-rc.js",
+        environment: "staging",
+        origin: MCP_ORIGIN,
+        backendConfigured: Boolean(String(env.BBC_BACKEND_URL || "").trim()),
+        backendTokenConfigured: Boolean(String(env.BBC_BACKEND_TOKEN || "").trim()),
+        oauthConfigured: Boolean(String(env.GITHUB_CLIENT_ID || "").trim() && String(env.GITHUB_CLIENT_SECRET || "").trim() && env.OAUTH_STATE),
+        oauthProvider: "github",
         workerVersion: versionMeta ? {
           id: versionMeta.id || null,
           tag: versionMeta.tag || null,
           timestamp: versionMeta.timestamp || null,
         } : null,
-        environment: "staging",
-        origin: MCP_ORIGIN,
-        backendConfigured: Boolean(
-          String(env.BBC_BACKEND_URL || "").trim() && String(env.BBC_BACKEND_TOKEN || "").trim(),
-        ),
-        oauthConfigured: Boolean(String(env.GITHUB_CLIENT_ID || "").trim() && String(env.GITHUB_CLIENT_SECRET || "").trim() && env.OAUTH_STATE),
-        oauthProvider: "github",
         toolContract: TOOL_CONTRACT,
       });
     }
