@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const contour = fs.readFileSync(new URL("../src/staging-contour.js", import.meta.url), "utf8");
+const contour = fs.readFileSync(new URL("../src/staging-contour-rc.js", import.meta.url), "utf8");
+const canonicalSchema = fs.readFileSync(new URL("../src/canonical-schema.js", import.meta.url), "utf8");
 const defaultConfig = fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
 const contourConfig = fs.readFileSync(new URL("../wrangler.contour.jsonc", import.meta.url), "utf8");
 const durableObject = fs.readFileSync(new URL("../src/oauth-state-do.js", import.meta.url), "utf8");
@@ -10,7 +11,7 @@ const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.ur
 
 function assertReleaseCConfig(config) {
   assert.match(config, /"name"\s*:\s*"bbc-quote-mcp-server-staging"/);
-  assert.match(config, /"main"\s*:\s*"src\/staging-contour\.js"/);
+  assert.match(config, /"main"\s*:\s*"src\/staging-contour-rc\.js"/);
   assert.match(config, /"binding"\s*:\s*"OAUTH_KV"/);
   assert.match(config, /"name"\s*:\s*"OAUTH_STATE"/);
   assert.match(config, /"class_name"\s*:\s*"OAuthStateDurableObject"/);
@@ -46,11 +47,36 @@ test("entrypoint exports the Durable Object class", () => {
   assert.match(durableObject, /export class OAuthStateDurableObject extends DurableObject/);
 });
 
-test("health contract advertises Durable Object one-time state and Worker version metadata", () => {
+test("strict canonical schema is bound at the MCP boundary", () => {
+  assert.match(contour, /import \{ canonicalDealSchema \} from "\.\/canonical-schema\.js";/);
+  assert.doesNotMatch(contour, /z\.record\(z\.string\(\), z\.unknown\(\)\)/);
+  assert.match(canonicalSchema, /canonicalId:\s*z\.string\(\)\.min\(1\)/);
+  assert.match(canonicalSchema, /paymentSchedules:\s*z\.array\(paymentScheduleSchema\)/);
+  assert.match(canonicalSchema, /managerDecisions:\s*z\.array\(managerDecisionSchema\)/);
+  assert.match(canonicalSchema, /fieldMeta:\s*z\.array\(fieldMetaSchema\)/);
+  assert.match(canonicalSchema, /lineage:\s*z\.array\(lineageEvidenceSchema\)/);
+});
+
+test("backend authentication uses a separate body token secret", () => {
+  assert.match(contour, /BBC_BACKEND_TOKEN/);
+  assert.match(contour, /JSON\.stringify\(\{ action, arguments: args, backendToken \}\)/);
+  assert.doesNotMatch(contour, /searchParams\.set\([^\n]*token/i);
+});
+
+test("per-tool scopes use verified SDK v1 authInfo", () => {
+  assert.match(contour, /extra\?\.authInfo\?\.scopes/);
+  assert.match(contour, /validateCanonicalDeal:\s*"quote\.read"/);
+  assert.match(contour, /recalculateDeal:\s*"quote\.write"/);
+  assert.match(contour, /generateQuote:\s*"quote\.generate"/);
+  assert.match(contour, /async \(args, extra\)/);
+});
+
+test("health contract advertises Durable Object state and Worker version metadata", () => {
   assert.match(contour, /DURABLE_OBJECT_ONE_TIME_STATE_V1/);
   assert.match(contour, /OAUTH_STATE_DURABLE_OBJECT/);
   assert.match(contour, /CF_VERSION_METADATA/);
   assert.match(contour, /releaseId:\s*RELEASE_ID/);
+  assert.match(contour, /workerEntrypoint:\s*"src\/staging-contour-rc\.js"/);
 });
 
 test("ChatGPT OAuth client compatibility is pinned to the verified provider generation", () => {
