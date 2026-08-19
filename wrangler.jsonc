@@ -16,7 +16,7 @@
     "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG"
   },
   "secrets": {
-    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL"]
+    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL", "BBC_BACKEND_TOKEN"]
   },
   "kv_namespaces": [
     {
