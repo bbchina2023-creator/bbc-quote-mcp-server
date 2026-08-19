@@ -3,7 +3,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bbc-quote-mcp-server-staging",
-  "main": "src/staging-contour.js",
+  "main": "src/staging-contour-rc.js",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": [
     "nodejs_compat",
@@ -12,11 +12,14 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
   "vars": {
     "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG"
   },
   "secrets": {
-    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL"]
+    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL", "BBC_BACKEND_TOKEN"]
   },
   "kv_namespaces": [
     {

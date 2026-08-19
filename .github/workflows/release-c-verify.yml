@@ -1,0 +1,45 @@
+name: Release C Verify
+
+on:
+  push:
+    branches:
+      - release-c-rc-corr-01
+  pull_request:
+    branches:
+      - release-c-do-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-c-rc-corr-01-verify
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Upload lockfile candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-c-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Run Release C contract tests
+        run: npm run verify:release-c
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run -c wrangler.contour.jsonc
