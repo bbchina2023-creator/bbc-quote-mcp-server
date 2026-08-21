@@ -11,9 +11,9 @@
   },
 
   "exports": {
-    "MyMCP": {
-      "type": "durable-object",
-      "state": "deleted"
-    }
+  "OAuthStateDurableObject": {
+    "type": "durable-object",
+    "storage": "sqlite"
   }
+}
 }
