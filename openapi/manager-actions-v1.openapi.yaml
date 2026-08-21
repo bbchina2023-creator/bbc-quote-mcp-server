@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: BBC KP Generator Manager Actions
-  version: 1.0.0-final
+  version: 1.0.1-final
   description: >-
     Manager-facing Release C contract. ChatGPT performs source-first semantic intake and
-    sends an already assembled Canonical Deal Contract v1 to the deterministic backend.
+    submits a Canonical Deal Contract v1. Business validation remains authoritative in
+    the deterministic backend; this schema defines only the stable transport contract.
 servers:
   - url: https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev
 security:
@@ -14,49 +15,35 @@ paths:
     post:
       operationId: validateCanonicalDeal
       summary: Validate Canonical Deal
-      description: Read-only validation of an already assembled Canonical Deal Contract v1.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [canonicalDeal]
-              properties:
-                canonicalDeal:
-                  $ref: '#/components/schemas/CanonicalDeal'
+              $ref: '#/components/schemas/CanonicalDealRequest'
       responses:
         '200':
           description: Validation result
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiResult' }
   /actions/recalculate-deal:
     post:
       operationId: recalculateDeal
       summary: Create verified Snapshot v2
-      description: Deterministically calculates a validated Canonical Deal and persists an immutable verified Snapshot v2.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [canonicalDeal, idempotencyKey]
-              properties:
-                canonicalDeal:
-                  $ref: '#/components/schemas/CanonicalDeal'
-                idempotencyKey:
-                  type: string
-                  minLength: 8
+              allOf:
+                - $ref: '#/components/schemas/CanonicalDealRequest'
+                - type: object
+                  required: [idempotencyKey]
+                  properties:
+                    idempotencyKey:
+                      type: string
+                      minLength: 8
       responses:
         '200':
           description: Calculation and snapshot result
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiResult' }
   /actions/get-verified-snapshot:
     post:
       operationId: getVerifiedSnapshot
@@ -67,35 +54,40 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: false
               properties:
-                snapshotId: { type: string, minLength: 1 }
-                dealId: { type: string, minLength: 1 }
-                includePayload: { type: boolean, default: false }
+                snapshotId:
+                  type: string
+                  minLength: 1
+                dealId:
+                  type: string
+                  minLength: 1
+                includePayload:
+                  type: boolean
+                  default: false
               anyOf:
                 - required: [snapshotId]
                 - required: [dealId]
       responses:
         '200':
           description: Snapshot result
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiResult' }
   /actions/generate-quote:
     post:
       operationId: generateQuote
-      summary: Generate quote from immutable Snapshot v2
+      summary: Generate quote strictly from immutable Snapshot v2
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              additionalProperties: false
               required: [snapshotId, idempotencyKey]
               properties:
-                snapshotId: { type: string, minLength: 1 }
-                idempotencyKey: { type: string, minLength: 8 }
+                snapshotId:
+                  type: string
+                  minLength: 1
+                idempotencyKey:
+                  type: string
+                  minLength: 8
                 outputProfile:
                   type: string
                   enum: [FULL_MASTER_WORKBOOK]
@@ -103,9 +95,6 @@ paths:
       responses:
         '200':
           description: Google Sheets, XLSX and PDF artifacts
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiResult' }
   /actions/get-deal-status:
     post:
       operationId: getDealStatus
@@ -116,280 +105,107 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: false
               required: [dealId]
               properties:
-                dealId: { type: string, minLength: 1 }
+                dealId:
+                  type: string
+                  minLength: 1
       responses:
         '200':
           description: Deal status
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiResult' }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
   schemas:
-    ApiResult:
+    CanonicalDealRequest:
       type: object
-      additionalProperties: true
-    FieldState:
-      type: string
-      enum: [MISSING, CONFLICT, CONFIRMED_BY_SOURCE, CONFIRMED_BY_MANAGER, CONFIRMED_BY_RULE, CONFIRMED_BY_VERIFIED_CALCULATION, NOT_APPLICABLE, CONFIRMED_ZERO]
+      required: [canonicalDeal]
+      properties:
+        canonicalDeal:
+          $ref: '#/components/schemas/CanonicalDeal'
     CanonicalDeal:
       type: object
-      additionalProperties: false
-      required: [contractVersion, canonicalId, dealId, revision, status, createdAt, createdBy, deal, items, expenses, allocations, rates, paymentSchedules, managerDecisions, ruleBindings, fieldMeta, lineage]
+      required:
+        - contractVersion
+        - canonicalId
+        - dealId
+        - revision
+        - status
+        - createdAt
+        - createdBy
+        - deal
+        - items
+        - expenses
+        - allocations
+        - rates
+        - paymentSchedules
+        - managerDecisions
+        - ruleBindings
+        - fieldMeta
+        - lineage
       properties:
-        contractVersion: { type: string, const: '1.0' }
-        canonicalId: { type: string, minLength: 1 }
-        dealId: { type: string, minLength: 1 }
-        revision: { type: integer, minimum: 1 }
-        status: { type: string, enum: [DRAFT, VALIDATED, CONFIRMED, SUPERSEDED] }
-        createdAt: { type: string }
-        createdBy: { type: string, minLength: 1 }
-        deal: { $ref: '#/components/schemas/Deal' }
+        contractVersion:
+          type: string
+        canonicalId:
+          type: string
+        dealId:
+          type: string
+        revision:
+          type: integer
+        status:
+          type: string
+        createdAt:
+          type: string
+        createdBy:
+          type: string
+        deal:
+          type: object
+          additionalProperties: true
         items:
           type: array
           minItems: 1
-          items: { $ref: '#/components/schemas/Item' }
+          items:
+            type: object
+            additionalProperties: true
         expenses:
           type: array
-          items: { $ref: '#/components/schemas/Expense' }
+          items:
+            type: object
+            additionalProperties: true
         allocations:
           type: array
-          items: { $ref: '#/components/schemas/Allocation' }
+          items:
+            type: object
+            additionalProperties: true
         rates:
           type: array
-          items: { $ref: '#/components/schemas/Rate' }
+          items:
+            type: object
+            additionalProperties: true
         paymentSchedules:
           type: array
-          items: { $ref: '#/components/schemas/PaymentSchedule' }
+          items:
+            type: object
+            additionalProperties: true
         managerDecisions:
           type: array
-          items: { $ref: '#/components/schemas/ManagerDecision' }
+          items:
+            type: object
+            additionalProperties: true
         ruleBindings:
           type: array
-          items: { $ref: '#/components/schemas/RuleBinding' }
+          items:
+            type: object
+            additionalProperties: true
         fieldMeta:
           type: array
-          items: { $ref: '#/components/schemas/FieldMeta' }
+          items:
+            type: object
+            additionalProperties: true
         lineage:
           type: array
-          items: { $ref: '#/components/schemas/LineageEvidence' }
-    Deal:
-      type: object
-      additionalProperties: true
-      properties:
-        client: { type: [string, 'null'] }
-        manager: { type: [string, 'null'] }
-        partner: { type: [string, 'null'] }
-        scheme: { type: [string, 'null'] }
-        quoteCurrency: { type: [string, 'null'] }
-        validityDays: { type: [integer, 'null'] }
-        paymentTermsText: { type: [string, 'null'] }
-        comment: { type: [string, 'null'] }
-        logistics: { $ref: '#/components/schemas/Logistics' }
-    Logistics:
-      type: object
-      additionalProperties: true
-      properties:
-        incoterms: { type: [string, 'null'] }
-        chinaRoute: { type: [string, 'null'] }
-        borderCrossing: { type: [string, 'null'] }
-        destinationCity: { type: [string, 'null'] }
-        transportMode: { type: [string, 'null'] }
-        deliveryDays: {}
-        productionDays: {}
-    Item:
-      type: object
-      additionalProperties: true
-      required: [itemId, itemNumber]
-      properties:
-        itemId: { type: string, minLength: 1 }
-        itemNumber: { type: integer, minimum: 1 }
-        supplier: { type: [string, 'null'] }
-        name: { type: [string, 'null'] }
-        article: { type: [string, 'null'] }
-        category: { type: [string, 'null'] }
-        subcategory: { type: [string, 'null'] }
-        ageClass: { type: [string, 'null'] }
-        tnVed: { type: [string, 'null'] }
-        quantity: { type: [number, 'null'], minimum: 0 }
-        quantityUnit: { type: [string, 'null'] }
-        priceType: { type: [string, 'null'] }
-        unitPrice: { type: [number, 'null'], minimum: 0 }
-        priceCurrency: { type: [string, 'null'] }
-        batchAmount: { type: [number, 'null'], minimum: 0 }
-        priceWithoutVat: { type: [number, 'null'] }
-        chinaVatRate: { type: [number, 'null'] }
-        priceWithVat: { type: [number, 'null'] }
-        vatRefundStatus: { type: [string, 'null'] }
-        vatRefundExpenseCny: { type: [number, 'null'] }
-        netWeightKg: { type: [number, 'null'], minimum: 0 }
-        grossWeightKg: { type: [number, 'null'], minimum: 0 }
-        volumeM3: { type: [number, 'null'], minimum: 0 }
-        packages: { type: [number, 'null'], minimum: 0 }
-        importVatRate: { type: [number, 'null'], minimum: 0 }
-        dutyMethod: { type: [string, 'null'] }
-        dutyRate: { type: [number, 'null'], minimum: 0 }
-        dutyCurrency: { type: [string, 'null'] }
-        productionDays: {}
-    Expense:
-      type: object
-      additionalProperties: true
-      required: [expenseId, includeInCalculation]
-      properties:
-        expenseId: { type: string, minLength: 1 }
-        itemId: { type: [string, 'null'] }
-        level: { type: [string, 'null'] }
-        category: { type: [string, 'null'] }
-        article: { type: [string, 'null'] }
-        calculationBucket: { type: [string, 'null'] }
-        amount: { type: [number, 'null'], minimum: 0 }
-        currency: { type: [string, 'null'] }
-        allocationMethod: { type: [string, 'null'] }
-        includeInCalculation: { type: boolean }
-        showToClient: { type: [boolean, 'null'] }
-    Allocation:
-      type: object
-      additionalProperties: true
-      required: [allocationId, expenseId, itemId]
-      properties:
-        allocationId: { type: string, minLength: 1 }
-        expenseId: { type: string, minLength: 1 }
-        itemId: { type: string, minLength: 1 }
-        share: { type: [number, 'null'], minimum: 0, maximum: 1 }
-        amountCny: { type: [number, 'null'], minimum: 0 }
-        amountRub: { type: [number, 'null'], minimum: 0 }
-        method: { type: [string, 'null'] }
-        confirmationState: { $ref: '#/components/schemas/FieldState' }
-        lineageRefs: { type: array, items: { type: string } }
-    Rate:
-      type: object
-      additionalProperties: true
-      required: [rateId, from, to, confirmed]
-      properties:
-        rateId: { type: string, minLength: 1 }
-        from: { type: string, minLength: 1 }
-        to: { type: string, minLength: 1 }
-        value: { type: [number, 'null'] }
-        confirmed: { type: boolean }
-        purpose: { type: [string, 'null'] }
-    PaymentSchedule:
-      type: object
-      additionalProperties: false
-      required: [scheduleId, dealId, scheduleType, activeSchemeId, currency, confirmationState, lineageRefs, schemes]
-      properties:
-        scheduleId: { type: string, minLength: 1 }
-        dealId: { type: string, minLength: 1 }
-        scheduleType: { type: string, enum: [SUPPLIER_ITEM_PAYMENT, CLIENT_PAYMENT] }
-        activeSchemeId: { type: string, minLength: 1 }
-        currency: { type: string, pattern: '^[A-Z]{3}$' }
-        confirmationState: { $ref: '#/components/schemas/FieldState' }
-        lineageRefs: { type: array, items: { type: string, minLength: 1 } }
-        schemes:
-          type: array
-          minItems: 1
-          items: { $ref: '#/components/schemas/PaymentScheme' }
-    PaymentScheme:
-      type: object
-      additionalProperties: false
-      required: [schemeId, active, lineageRefs, stages]
-      properties:
-        schemeId: { type: string, minLength: 1 }
-        name: { type: [string, 'null'] }
-        applicability: {}
-        active: { type: boolean }
-        lineageRefs: { type: array, items: { type: string, minLength: 1 } }
-        stages:
-          type: array
-          minItems: 1
-          items: { $ref: '#/components/schemas/PaymentStage' }
-    PaymentStage:
-      type: object
-      additionalProperties: false
-      required: [stageId, order, zeroConfirmed, confirmationState, lineageRefs, allocations]
-      properties:
-        stageId: { type: string, minLength: 1 }
-        order: { type: integer, minimum: 1 }
-        stageCode: { type: [string, 'null'] }
-        label: { type: [string, 'null'] }
-        dueCondition: { type: [string, 'null'] }
-        percent: { type: [number, 'null'], minimum: 0 }
-        amount: { type: [number, 'null'], minimum: 0 }
-        zeroConfirmed: { type: boolean }
-        confirmationState: { $ref: '#/components/schemas/FieldState' }
-        lineageRefs: { type: array, items: { type: string, minLength: 1 } }
-        allocations:
-          type: array
-          items: { $ref: '#/components/schemas/PaymentAllocation' }
-    PaymentAllocation:
-      type: object
-      additionalProperties: false
-      required: [allocationId, entityType, entityId, baseType, zeroConfirmed, confirmationState, lineageRefs]
-      properties:
-        allocationId: { type: string, minLength: 1 }
-        entityType: { type: string, minLength: 1 }
-        entityId: { type: string, minLength: 1 }
-        baseType: { type: string, minLength: 1 }
-        percent: { type: [number, 'null'], minimum: 0 }
-        amount: { type: [number, 'null'], minimum: 0 }
-        zeroConfirmed: { type: boolean }
-        confirmationState: { $ref: '#/components/schemas/FieldState' }
-        lineageRefs: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
-    ManagerDecision:
-      type: object
-      additionalProperties: false
-      required: [decisionId, fieldCode, decisionType, decidedAt, decidedBy]
-      properties:
-        decisionId: { type: string, minLength: 1 }
-        entityType: { type: [string, 'null'] }
-        entityId: { type: [string, 'null'] }
-        fieldCode: { type: string, minLength: 1 }
-        decisionType: { type: string, minLength: 1 }
-        value: {}
-        reason: { type: [string, 'null'] }
-        decidedAt: { type: string }
-        decidedBy: { type: string, minLength: 1 }
-        sourceQuestionId: { type: [string, 'null'] }
-    RuleBinding:
-      type: object
-      additionalProperties: true
-      required: [ruleId, ruleVersion]
-      properties:
-        ruleId: { type: string, minLength: 1 }
-        ruleVersion: { type: string, minLength: 1 }
-    FieldMeta:
-      type: object
-      additionalProperties: false
-      required: [entityType, fieldCode, state, lineageRefs, ruleRefs, decisionRefs]
-      properties:
-        entityType: { type: string, minLength: 1 }
-        entityId: { type: [string, 'null'] }
-        fieldCode: { type: string, minLength: 1 }
-        state: { $ref: '#/components/schemas/FieldState' }
-        lineageRefs: { type: array, items: { type: string } }
-        ruleRefs: { type: array, items: { type: string } }
-        decisionRefs: { type: array, items: { type: string } }
-        note: { type: [string, 'null'] }
-    LineageEvidence:
-      type: object
-      additionalProperties: true
-      required: [evidenceId, sourceType, sourceRole, authorityClass, capturedAt]
-      properties:
-        evidenceId: { type: string, minLength: 1 }
-        sourceType: { type: string, minLength: 1 }
-        sourceFileId: { type: [string, 'null'] }
-        sourceFileName: { type: [string, 'null'] }
-        sourceSheet: { type: [string, 'null'] }
-        sourceRange: { type: [string, 'null'] }
-        sourceFormula: { type: [string, 'null'] }
-        sourceRole: { type: string, minLength: 1 }
-        authorityClass: { type: string, minLength: 1 }
-        ruleId: { type: [string, 'null'] }
-        ruleVersion: { type: [string, 'null'] }
-        capturedAt: { type: string }
-        note: { type: [string, 'null'] }
+          items:
+            type: object
+            additionalProperties: true
