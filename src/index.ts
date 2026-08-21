@@ -5,6 +5,7 @@ import OAuthProvider, {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpHandler } from "agents/mcp";
 import { z } from "zod";
+import { OAuthStateDurableObject } from "./oauth-state-do.js";
 
 interface Env {
   /** Full Apps Script Web App URL including ?token=... */
@@ -483,6 +484,7 @@ const defaultHandler: ExportedHandler<Env> = {
   },
 };
 
+export { OAuthStateDurableObject };
 export default new OAuthProvider<Env>({
   apiRoute: "/mcp",
   apiHandler: mcpApiHandler,
