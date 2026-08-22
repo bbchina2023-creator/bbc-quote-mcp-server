@@ -1,0 +1,24 @@
+{
+  "releaseId": "RC-CORR-06B",
+  "environment": "staging",
+  "workerName": "bbc-quote-mcp-server-staging",
+  "serverVersion": "1.0.5-rc-corr-06b-staging",
+  "sourceSha256": "1be3f2567d35837003e94000c6be1baf1c89db7fae05a78fc98bb2ade4aad003",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "mcpAuthMode": "PUBLIC_DISCOVERY_INBAND_OAUTH_CHALLENGE_V2",
+  "scopeEnforcement": "INBAND_MCP_AUTH_CHALLENGE_PER_TOOL_SCOPE_V3",
+  "toolContract": [
+    "validateCanonicalDeal",
+    "recalculateDeal",
+    "getVerifiedSnapshot",
+    "generateQuote",
+    "getDealStatus"
+  ],
+  "changeScope": "Worker auth/discovery interoperability only; Apps Script and production untouched",
+  "acceptance": {
+    "initializeAnonymous": 200,
+    "toolsListAnonymous": "exact five tools",
+    "unauthenticatedToolCall": "HTTP 200 MCP CallToolResult isError with _meta[mcp/www_authenticate]",
+    "backendCallWithoutScope": "must not occur"
+  }
+}

@@ -1,16 +1,20 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
-import { WorkerEntrypoint } from "cloudflare:workers";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpHandler } from "agents/mcp";
 import { z } from "zod";
 import { canonicalDealSchema } from "./canonical-schema.js";
 import {
+  ACTION_BODY_MAX_BYTES,
+  ACTION_BRIDGE_VERSION,
+  ACTION_RESPONSE_MAX_BYTES,
+  ACTION_ROUTE_TO_BACKEND,
+  createActionBridgeHandler,
+} from "./action-bridge.js";
+import {
   OAUTH_FLOW_TTL_SECONDS,
   STATE_COOKIE_NAME,
   constantTimeEqual,
-  consumeConsentRecord,
   consumeGitHubStateRecord,
-  createConsentRecord,
   createGitHubStateRecord,
   readCookie,
   safeOAuthLog,
@@ -21,13 +25,18 @@ import {
 export { OAuthStateDurableObject } from "./oauth-state-do.js";
 
 const SERVER_NAME = "BBC KP Generator — Document Contour";
-const SERVER_VERSION = "1.0.0-contour-v1-staging";
-const RELEASE_ID = "RC-CORR-01D";
+const SERVER_VERSION = "1.0.5-rc-corr-06c-staging";
+const RELEASE_ID = "RC-CORR-06C";
+const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.5-rc-corr-03";
+const SOURCE_BASE_COMMIT = "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1";
 const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
-const SCOPE_ENFORCEMENT = "OAUTH_PROVIDER_UNWRAP_TOKEN_SCOPE_V1";
+const SCOPE_ENFORCEMENT = "ROOT_SECURITY_SCHEMES_INBAND_MCP_AUTH_CHALLENGE_V4";
 const BACKEND_TOKEN_MODE = "JSON_BODY_SECRET";
+const MCP_AUTH_MODE = "PUBLIC_DISCOVERY_ROOT_SECURITY_SCHEMES_INBAND_OAUTH_V3";
+const ACTION_AUTH_MODE = "BEARER_API_KEY";
 const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
 const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
+const MCP_RESOURCE_METADATA = `${MCP_ORIGIN}/.well-known/oauth-protected-resource/mcp`;
 const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
 const ALLOWED_GITHUB_USER_ID = 307006935;
 export const RESOURCE_SCOPES = ["quote.read", "quote.write", "quote.generate"];
@@ -39,6 +48,13 @@ export const TOOL_CONTRACT = [
   "generateQuote",
   "getDealStatus",
 ];
+export const TOOL_REQUIRED_SCOPES = Object.freeze({
+  validateCanonicalDeal: "quote.read",
+  recalculateDeal: "quote.write",
+  getVerifiedSnapshot: "quote.read",
+  generateQuote: "quote.generate",
+  getDealStatus: "quote.read",
+});
 
 function requireBackendConfiguration(env) {
   const backendUrl = String(env.BBC_BACKEND_URL || "").trim();
@@ -87,8 +103,14 @@ async function callBackend(env, action, args) {
     body: JSON.stringify({ action, arguments: args, backendToken }),
     redirect: "manual",
   });
-  return decodeAppsScriptResponse(response);
+  const result = await decodeAppsScriptResponse(response);
+  if (!result || result.contourVersion !== EXPECTED_BACKEND_CONTOUR_VERSION) {
+    throw new Error(`BACKEND_CONTOUR_VERSION_MISMATCH: expected ${EXPECTED_BACKEND_CONTOUR_VERSION}, received ${String(result?.contourVersion || "missing")}`);
+  }
+  return result;
 }
+
+const handleActionRequest = createActionBridgeHandler(callBackend);
 
 function successResult(data) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -104,11 +126,31 @@ function errorResult(error) {
   };
 }
 
-function requireToolScope(effectiveScopes, requiredScope) {
+function hasToolScope(effectiveScopes, requiredScope) {
   const granted = Array.isArray(effectiveScopes) ? effectiveScopes : [];
-  if (!granted.includes(requiredScope)) {
-    throw new Error(`OAuth scope ${requiredScope} is required`);
-  }
+  return granted.includes(requiredScope);
+}
+
+function oauthToolChallenge(requiredScope) {
+  const challenge =
+    `Bearer realm="OAuth", resource_metadata="${MCP_RESOURCE_METADATA}", scope="${requiredScope}", ` +
+    `error="insufficient_scope", error_description="OAuth scope ${requiredScope} is required"`;
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: `Authentication required. OAuth scope ${requiredScope} is required.`,
+    }],
+    _meta: {
+      "mcp/www_authenticate": [challenge],
+    },
+  };
+}
+
+function oauthToolMeta(requiredScope) {
+  return {
+    securitySchemes: [{ type: "oauth2", scopes: [requiredScope] }],
+  };
 }
 
 function createServer(env, effectiveScopes) {
@@ -123,11 +165,12 @@ function createServer(env, effectiveScopes) {
         "Checks schema, lineage, rule authority, payment schedule, quote readiness and deterministic preview. " +
         "The backend does not semantically parse source documents.",
       inputSchema: { canonicalDeal: canonicalDealSchema },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: oauthToolMeta("quote.read"),
     },
     async (args) => {
       try {
-        requireToolScope(effectiveScopes, "quote.read");
+        if (!hasToolScope(effectiveScopes, "quote.read")) return oauthToolChallenge("quote.read");
         return successResult(await callBackend(env, "validateCanonicalDeal", args));
       } catch (error) { return errorResult(error); }
     },
@@ -144,11 +187,12 @@ function createServer(env, effectiveScopes) {
         canonicalDeal: canonicalDealSchema,
         idempotencyKey: z.string().min(8),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: oauthToolMeta("quote.write"),
     },
     async (args) => {
       try {
-        requireToolScope(effectiveScopes, "quote.write");
+        if (!hasToolScope(effectiveScopes, "quote.write")) return oauthToolChallenge("quote.write");
         return successResult(await callBackend(env, "recalculateDeal", args));
       } catch (error) { return errorResult(error); }
     },
@@ -164,11 +208,12 @@ function createServer(env, effectiveScopes) {
         dealId: z.string().min(1).optional(),
         includePayload: z.boolean().optional().default(false),
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: oauthToolMeta("quote.read"),
     },
     async (args) => {
       try {
-        requireToolScope(effectiveScopes, "quote.read");
+        if (!hasToolScope(effectiveScopes, "quote.read")) return oauthToolChallenge("quote.read");
         if (!args.snapshotId && !args.dealId) throw new Error("snapshotId or dealId is required");
         return successResult(await callBackend(env, "getVerifiedSnapshot", args));
       } catch (error) { return errorResult(error); }
@@ -187,11 +232,12 @@ function createServer(env, effectiveScopes) {
         idempotencyKey: z.string().min(8),
         outputProfile: z.enum(["FULL_MASTER_WORKBOOK"]).optional().default("FULL_MASTER_WORKBOOK"),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: oauthToolMeta("quote.generate"),
     },
     async (args) => {
       try {
-        requireToolScope(effectiveScopes, "quote.generate");
+        if (!hasToolScope(effectiveScopes, "quote.generate")) return oauthToolChallenge("quote.generate");
         return successResult(await callBackend(env, "generateQuote", args));
       } catch (error) { return errorResult(error); }
     },
@@ -203,11 +249,12 @@ function createServer(env, effectiveScopes) {
       title: "Получить статус сделки",
       description: "Returns the latest verified Snapshot v2 and quote artifacts bound to that exact latest snapshot for the specified dealId.",
       inputSchema: { dealId: z.string().min(1) },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      _meta: oauthToolMeta("quote.read"),
     },
     async (args) => {
       try {
-        requireToolScope(effectiveScopes, "quote.read");
+        if (!hasToolScope(effectiveScopes, "quote.read")) return oauthToolChallenge("quote.read");
         return successResult(await callBackend(env, "getDealStatus", args));
       } catch (error) { return errorResult(error); }
     },
@@ -222,15 +269,6 @@ function requireOAuthConfiguration(env) {
   if (!env.OAUTH_STATE) throw new Error("OAUTH_STATE Durable Object binding is not configured");
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
 function textResponse(body, status, setCookies = []) {
   const headers = new Headers({
     "cache-control": "no-store",
@@ -242,20 +280,7 @@ function textResponse(body, status, setCookies = []) {
   return new Response(body, { status, headers });
 }
 
-function htmlResponse(body, setCookies = []) {
-  const headers = new Headers({
-    "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-    "content-type": "text/html; charset=utf-8",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
-  });
-  for (const cookie of setCookies) headers.append("set-cookie", cookie);
-  return new Response(body, { status: 200, headers });
-}
-
-async function showAuthorizationConsent(request, env) {
+async function beginGitHubAuthorization(request, env) {
   requireOAuthConfiguration(env);
   let oauthRequest;
   try { oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request); }
@@ -265,33 +290,7 @@ async function showAuthorizationConsent(request, env) {
   let client;
   try { client = await env.OAUTH_PROVIDER.lookupClient(clientId); }
   catch { return textResponse("Unknown OAuth client", 400); }
-  const { consentId, csrfToken } = await createConsentRecord(env.OAUTH_STATE, oauthRequest);
-  const scopes = Array.isArray(oauthRequest.scope) ? oauthRequest.scope : [];
-  const clientName = String(client?.clientName || client?.client_name || client?.name || clientId).trim();
-  safeOAuthLog("oauth.authorize.get.ready", request, { consentStored: true, stateStorage: "durable_object" });
-  return htmlResponse(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BBC КП — доступ</title><style>body{font-family:system-ui,sans-serif;background:#f6f7f9;color:#1f2937}main{max-width:680px;margin:8vh auto;background:#fff;padding:32px;border-radius:16px}button{padding:11px 18px;border:0;border-radius:9px;margin-right:10px}.ok{background:#111827;color:#fff}</style></head><body><main><h1>Разрешить доступ к BBC KP Generator?</h1><p>Клиент: <strong>${escapeHtml(clientName)}</strong></p><p>Права: ${escapeHtml(scopes.join(", ") || "нет")}</p><form method="post" action="/authorize"><input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}"><input type="hidden" name="consent_id" value="${escapeHtml(consentId)}"><button class="ok" name="decision" value="approve">Разрешить</button><button name="decision" value="deny">Отменить</button></form></main></body></html>`);
-}
-
-async function handleAuthorizationConsent(request, env) {
-  requireOAuthConfiguration(env);
-  let formData;
-  try { formData = await request.formData(); }
-  catch { return textResponse("Invalid consent form", 400); }
-  const consentId = String(formData.get("consent_id") || "").trim();
-  if (!consentId) return textResponse("Missing consent state", 400);
-  const csrfFromForm = String(formData.get("csrf_token") || "");
-  const consent = await consumeConsentRecord(env.OAUTH_STATE, consentId, csrfFromForm, request, MCP_ORIGIN);
-  safeOAuthLog("oauth.authorize.post.validated", request, {
-    consentIdPresent: Boolean(consentId),
-    csrfTokenPresent: Boolean(csrfFromForm),
-    validationResult: consent.ok ? "accepted" : consent.reason,
-    stateStorage: "durable_object",
-  });
-  if (!consent.ok) return textResponse("CSRF validation failed", 400);
-  if (String(formData.get("decision") || "") !== "approve") {
-    return textResponse("Authorization cancelled", 403);
-  }
-  const oauthRequest = consent.oauthRequest;
+  if (!client) return textResponse("Unknown OAuth client", 400);
   const state = crypto.randomUUID();
   const { stateHash } = await createGitHubStateRecord(env.OAUTH_STATE, state, oauthRequest);
   const stateCookie = secureCookie(STATE_COOKIE_NAME, stateHash, OAUTH_FLOW_TTL_SECONDS);
@@ -300,6 +299,10 @@ async function handleAuthorizationConsent(request, env) {
   githubUrl.searchParams.set("redirect_uri", GITHUB_CALLBACK);
   githubUrl.searchParams.set("scope", "read:user user:email");
   githubUrl.searchParams.set("state", state);
+  safeOAuthLog("oauth.authorize.redirect.github", request, {
+    oauthRequestStored: true,
+    stateStorage: "durable_object",
+  });
   const headers = new Headers({ location: githubUrl.toString(), "cache-control": "no-store", "referrer-policy": "no-referrer" });
   headers.append("set-cookie", stateCookie);
   return new Response(null, { status: 302, headers });
@@ -364,22 +367,102 @@ async function finishGitHubAuthorization(request, env) {
   }
 }
 
-export class McpApiHandler extends WorkerEntrypoint {
-  async fetch(request) {
-    const authorization = String(request.headers.get("authorization") || "");
-    const match = /^Bearer\s+(.+)$/i.exec(authorization);
-    if (!match) return textResponse("Unauthorized", 401);
-    const tokenSummary = await this.env.OAUTH_PROVIDER.unwrapToken(match[1]);
-    if (!tokenSummary || !Array.isArray(tokenSummary.scope)) {
-      return textResponse("Unauthorized", 401);
-    }
-    return createMcpHandler(createServer(this.env, tokenSummary.scope))(request, this.env, this.ctx);
+function oauthChallengeResponse() {
+  const headers = new Headers({
+    "cache-control": "no-store",
+    "content-type": "text/plain; charset=utf-8",
+    "www-authenticate": `Bearer realm="OAuth", resource_metadata="${MCP_RESOURCE_METADATA}"`,
+    "access-control-expose-headers": "WWW-Authenticate",
+  });
+  return new Response("Unauthorized", { status: 401, headers });
+}
+
+function tokenAudienceMatches(tokenSummary) {
+  const audience = tokenSummary?.audience;
+  if (typeof audience === "string") return audience === MCP_RESOURCE;
+  if (Array.isArray(audience)) return audience.includes(MCP_RESOURCE);
+  return false;
+}
+
+async function resolveMcpScopes(request, env) {
+  const authorization = String(request.headers.get("authorization") || "");
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (!match) return { scopes: [], tokenState: "missing" };
+  const tokenSummary = await env.OAUTH_PROVIDER.unwrapToken(match[1]);
+  if (!tokenSummary || !Array.isArray(tokenSummary.scope) || !tokenAudienceMatches(tokenSummary)) {
+    return { scopes: [], tokenState: "invalid" };
+  }
+  return { scopes: tokenSummary.scope, tokenState: "valid" };
+}
+
+function promoteRootSecuritySchemesInPayload(payload) {
+  const tools = payload?.result?.tools;
+  if (!Array.isArray(tools)) return payload;
+  for (const tool of tools) {
+    const requiredScope = TOOL_REQUIRED_SCOPES[String(tool?.name || "")];
+    if (!requiredScope) continue;
+    const schemes = [{ type: "oauth2", scopes: [requiredScope] }];
+    tool.securitySchemes = schemes;
+    tool._meta = { ...(tool._meta || {}), securitySchemes: schemes };
+  }
+  return payload;
+}
+
+function promoteRootSecuritySchemesInBody(body, contentType) {
+  if (!String(body || "").trim()) return body;
+  if (String(contentType || "").includes("text/event-stream")) {
+    return String(body).split(/(\r?\n)/).map((part) => {
+      if (!part.startsWith("data:")) return part;
+      const raw = part.slice(5).trim();
+      if (!raw.startsWith("{")) return part;
+      try {
+        const payload = promoteRootSecuritySchemesInPayload(JSON.parse(raw));
+        return `data: ${JSON.stringify(payload)}`;
+      } catch {
+        return part;
+      }
+    }).join("");
+  }
+  try {
+    return JSON.stringify(promoteRootSecuritySchemesInPayload(JSON.parse(body)));
+  } catch {
+    return body;
   }
 }
 
+async function handleMcpRequest(request, env, ctx) {
+  const requestClone = request.clone();
+  let method = "";
+  try { method = String((await requestClone.json())?.method || ""); } catch {}
+  const auth = await resolveMcpScopes(request, env);
+  const response = await createMcpHandler(createServer(env, auth.scopes))(request, env, ctx);
+  if (method !== "tools/list" || !response.ok) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  const contentType = headers.get("content-type") || "";
+  const body = await response.text();
+  const promotedBody = promoteRootSecuritySchemesInBody(body, contentType);
+  return new Response(promotedBody, { status: response.status, statusText: response.statusText, headers });
+}
+
+const oauthProviderSentinelHandler = {
+  async fetch() {
+    return new Response("Not found", {
+      status: 404,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": "text/plain; charset=utf-8",
+      },
+    });
+  },
+};
+
 const defaultHandler = {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const action = ACTION_ROUTE_TO_BACKEND[url.pathname];
+    if (action) return handleActionRequest(request, env, action);
+    if (url.pathname === "/mcp") return handleMcpRequest(request, env, ctx);
     if (url.pathname === "/health") {
       const versionMeta = env.CF_VERSION_METADATA || null;
       return Response.json({
@@ -387,18 +470,26 @@ const defaultHandler = {
         service: SERVER_NAME,
         version: SERVER_VERSION,
         releaseId: RELEASE_ID,
-        contourVersion: "1.0.3",
+        contourVersion: EXPECTED_BACKEND_CONTOUR_VERSION,
+        sourceBaseCommit: SOURCE_BASE_COMMIT,
         canonicalSchema: CANONICAL_SCHEMA_ID,
-        oauthSecurity: "DURABLE_OBJECT_ONE_TIME_STATE_V1",
+        oauthSecurity: "DIRECT_GITHUB_REDIRECT_STATE_BOUND_V3",
         oneTimeStateStorage: "OAUTH_STATE_DURABLE_OBJECT",
         oauthProviderStorage: "OAUTH_KV",
         scopeEnforcement: SCOPE_ENFORCEMENT,
+        mcpAuthMode: MCP_AUTH_MODE,
         backendTokenMode: BACKEND_TOKEN_MODE,
         workerEntrypoint: "src/staging-contour-rc.js",
         environment: "staging",
         origin: MCP_ORIGIN,
         backendConfigured: Boolean(String(env.BBC_BACKEND_URL || "").trim()),
         backendTokenConfigured: Boolean(String(env.BBC_BACKEND_TOKEN || "").trim()),
+        actionBridgeVersion: ACTION_BRIDGE_VERSION,
+        actionAuthMode: ACTION_AUTH_MODE,
+        actionConfigured: Boolean(String(env.GPT_ACTION_KEY || "").trim()),
+        actionBodyMaxBytes: ACTION_BODY_MAX_BYTES,
+        actionResponseMaxBytes: ACTION_RESPONSE_MAX_BYTES,
+        actionContract: Object.values(ACTION_ROUTE_TO_BACKEND),
         oauthConfigured: Boolean(String(env.GITHUB_CLIENT_ID || "").trim() && String(env.GITHUB_CLIENT_SECRET || "").trim() && env.OAUTH_STATE),
         oauthProvider: "github",
         workerVersion: versionMeta ? {
@@ -410,8 +501,9 @@ const defaultHandler = {
       });
     }
     if (url.pathname === "/authorize") {
-      if (request.method === "GET") return showAuthorizationConsent(request, env);
-      if (request.method === "POST") return handleAuthorizationConsent(request, env);
+      if (request.method === "GET" || request.method === "POST") {
+        return beginGitHubAuthorization(request, env);
+      }
       return new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST" } });
     }
     if (url.pathname === "/callback" && request.method === "GET") return finishGitHubAuthorization(request, env);
@@ -420,8 +512,11 @@ const defaultHandler = {
 };
 
 export default new OAuthProvider({
-  apiRoute: "/mcp",
-  apiHandler: McpApiHandler,
+  // workers-oauth-provider v0.10.3 requires at least one configured protected API route.
+  // /mcp intentionally stays in defaultHandler so initialize/tools-list can be discovered
+  // before OAuth. Protected tools return an in-band MCP OAuth challenge until the required scope is granted.
+  apiRoute: "/__oauth_provider_internal_sentinel",
+  apiHandler: oauthProviderSentinelHandler,
   defaultHandler,
   authorizeEndpoint: "/authorize",
   tokenEndpoint: "/oauth/token",

@@ -1,0 +1,43 @@
+{
+  "releaseId": "RC-CORR-03",
+  "candidateStatus": "STAGING_DEPLOYED_CHATGPT_RECONNECT_REQUIRED",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "branch": "codex/rc-corr-03",
+  "appsScriptVersion": "4.2.1",
+  "backendContourVersion": "1.0.5-rc-corr-03",
+  "workerVersion": "1.0.1-rc-corr-03-staging",
+  "workerTarget": "bbc-quote-mcp-server-staging",
+  "appsScriptStagingDeploymentId": "AKfycbwAYxOiiWNsLnlspEYQfvlJKipSGJjeWdWIeKGlnsTJZRUM4zSsiyGSbVhaUT84Yws7",
+  "cloudflareStagingVersionId": "dd50fe8e-475b-43f3-93aa-6f6a2f5ae262",
+  "cloudflareStagingTrafficPercent": 100,
+  "productionWorkerTargeted": false,
+  "artifacts": {
+    "apps-script/BBC_KP_Generator_Code_v4.2.0_RELEASE_C_RC-CORR-03.gs": "3637e25487e836edad3efa441776b97ba4d4a3114ded59f15415352d029750eb",
+    "src/canonical-schema.js": "a3cb3beceb12c43e1a400424741f6c49feee3d0a9887bfeece64f18dfab7b5ec",
+    "src/staging-contour-rc.js": "889afb35e806f6d9a62f002f2e505d8f082eaf710195cc466d6312ca26636f11",
+    "contracts/canonical-deal-v1.schema.json": "980e488de69fa9e98859ee30bf9603e0d255cd8647ce8c424a58c761a65c98a3",
+    "contracts/payment-schedule-v1.schema.json": "dba07b0dfe5c94d4ab8f4db26ced4f8ade567cd14edb42c3ba4b271146e53be9",
+    "contracts/rule-registry-v1.schema.json": "367d74ce42fa8fd68e27fb1fa0d4ff5ee89593d8724f0ac4de2bd57b7b7bb2e5",
+    "contracts/snapshot-v2.schema.json": "fbf080f7cf97e531ce6bff13d6cd43c361141c2e3401c72742cdaa90943764ad",
+    "package-lock.json": "ad66a54567d3bab5812d0b33443378a2c6f4a39cf7b61c8df254a6f8f30ffbb7",
+    "test/rc-corr-03-negative-regression.test.js": "91b910c6535be87ab57dc6d72c511310b8f8f1450ee6e67b1e06bdf018763f05"
+  },
+  "acceptance": {
+    "nodeTests": {"passed": 29, "failed": 0},
+    "embeddedAppsScriptSuites": {"suitesPassed": 4, "checksPassed": 15, "failed": 0},
+    "appsScriptSyntax": "PASS",
+    "workerSyntax": "PASS",
+    "wranglerDryRun": "PASS",
+    "appsScriptLiveSelfTest": "PASS",
+    "appsScriptReadOnlyBackendCall": "PASS",
+    "oauthDiscovery": "PASS",
+    "oauthConsentPost": "PASS_REDIRECT_TO_GITHUB",
+    "chatGptReconnect": "REQUIRED",
+    "npmAudit": {"vulnerabilities": 0}
+  },
+  "deploymentPolicy": {
+    "stagingFirst": true,
+    "oneControlledE2E": true,
+    "productionPromotionRequiresStagingPass": true
+  }
+}

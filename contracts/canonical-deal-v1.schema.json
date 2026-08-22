@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bbc.example/contracts/canonical-deal-v1.schema.json",
+  "title": "BBC Canonical Deal Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "canonicalId", "dealId", "revision", "status", "createdAt", "createdBy", "deal", "items", "expenses", "allocations", "rates", "paymentSchedules", "managerDecisions", "ruleBindings", "fieldMeta", "lineage"],
+  "properties": {
+    "contractVersion": {"const": "1.0"}, "canonicalId": {"type": "string", "minLength": 1}, "dealId": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1}, "status": {"enum": ["DRAFT", "VALIDATED", "CONFIRMED", "SUPERSEDED"]},
+    "createdAt": {"type": "string", "format": "date-time"}, "createdBy": {"type": "string", "minLength": 1}, "deal": {"type": "object"},
+    "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/item"}},
+    "expenses": {"type": "array", "items": {"$ref": "#/$defs/expense"}},
+    "allocations": {"type": "array", "items": {"$ref": "#/$defs/allocation"}},
+    "rates": {"type": "array", "items": {"type": "object"}},
+    "paymentSchedules": {"type": "array", "items": {"$ref": "payment-schedule-v1.schema.json"}},
+    "managerDecisions": {"type": "array", "items": {"$ref": "#/$defs/managerDecision"}},
+    "ruleBindings": {"type": "array", "items": {"$ref": "#/$defs/ruleBinding"}},
+    "fieldMeta": {"type": "array", "items": {"$ref": "#/$defs/fieldMeta"}},
+    "lineage": {"type": "array", "items": {"$ref": "#/$defs/lineage"}}
+  },
+  "$defs": {
+    "fieldState": {"enum": ["MISSING", "CONFLICT", "CONFIRMED_BY_SOURCE", "CONFIRMED_BY_MANAGER", "CONFIRMED_BY_RULE", "CONFIRMED_BY_VERIFIED_CALCULATION", "NOT_APPLICABLE", "CONFIRMED_ZERO"]},
+    "item": {"type": "object", "required": ["itemId", "itemNumber"], "properties": {"itemId": {"type": "string", "minLength": 1}, "itemNumber": {"type": "integer", "minimum": 1}, "quantity": {"type": ["number", "null"], "minimum": 0}, "unitPrice": {"type": ["number", "null"], "minimum": 0}, "batchAmount": {"type": ["number", "null"], "minimum": 0}}},
+    "expense": {"type": "object", "required": ["expenseId", "includeInCalculation"], "properties": {"expenseId": {"type": "string", "minLength": 1}, "itemId": {"type": ["string", "null"]}, "amount": {"type": ["number", "null"], "minimum": 0}, "allocationMethod": {"type": ["string", "null"]}, "includeInCalculation": {"type": "boolean"}}},
+    "allocation": {"type": "object", "required": ["allocationId", "expenseId", "itemId"], "properties": {"allocationId": {"type": "string", "minLength": 1}, "expenseId": {"type": "string", "minLength": 1}, "itemId": {"type": "string", "minLength": 1}, "share": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}},
+    "managerDecision": {"type": "object", "additionalProperties": false, "required": ["decisionId", "fieldCode", "decisionType", "decidedAt", "decidedBy"], "properties": {"decisionId": {"type": "string", "minLength": 1}, "entityType": {"type": ["string", "null"]}, "entityId": {"type": ["string", "null"]}, "fieldCode": {"type": "string", "minLength": 1}, "decisionType": {"type": "string", "minLength": 1}, "value": {}, "reason": {"type": ["string", "null"]}, "decidedAt": {"type": "string", "format": "date-time"}, "decidedBy": {"type": "string", "minLength": 1}, "sourceQuestionId": {"type": ["string", "null"]}}},
+    "ruleBinding": {"type": "object", "additionalProperties": false, "required": ["ruleId", "ruleVersion", "fieldCodes", "schemeCodes"], "properties": {"ruleId": {"type": "string", "minLength": 1}, "ruleVersion": {"type": "string", "minLength": 1}, "fieldCodes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "schemeCodes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}},
+    "fieldMeta": {"type": "object", "additionalProperties": false, "required": ["entityType", "fieldCode", "state", "lineageRefs", "ruleRefs", "decisionRefs"], "properties": {"entityType": {"type": "string", "minLength": 1}, "entityId": {"type": ["string", "null"]}, "fieldCode": {"type": "string", "minLength": 1}, "state": {"$ref": "#/$defs/fieldState"}, "lineageRefs": {"type": "array", "items": {"type": "string"}}, "ruleRefs": {"type": "array", "items": {"type": "string"}}, "decisionRefs": {"type": "array", "items": {"type": "string"}}, "note": {"type": ["string", "null"]}}},
+    "lineage": {"type": "object", "required": ["evidenceId", "sourceType", "sourceRole", "authorityClass", "capturedAt"], "properties": {"evidenceId": {"type": "string", "minLength": 1}, "sourceType": {"enum": ["FILE", "DERIVED", "IMPORTED_DATA", "IMPORTED_VALUE", "FORMULA", "LEGACY_CANONICAL_ROW", "PRIMARY_SOURCE", "VERIFIED_BENCHMARK"]}, "sourceRole": {"enum": ["ACTIVE_TEMPLATE", "APPROVED_BENCHMARK_EVIDENCE", "CLIENT_OUTPUT", "CURRENT_VERIFIED_BENCHMARK", "GLOBAL_APPROVED_RULE", "GLOBAL_DEFAULT", "LEGACY_CANONICAL_ROW", "LEGACY_DEAL_SCOPED_RATE_BOOK", "LEGACY_DETERMINISTIC_CLASSIFICATION", "MANAGER_CONFIRMATION", "ORDER", "PARTNER_CALCULATION", "PRIMARY_PAYMENT_SOURCE", "STRUCTURED_CARD", "UNKNOWN", "VERIFIED_SNAPSHOT"]}, "authorityClass": {"enum": ["PRIMARY_SOURCE", "CONFIRMED_SOURCE_EVIDENCE", "CONFIRMED_SOURCE_FACT", "DERIVED_EVIDENCE", "MIGRATION_EVIDENCE", "VERIFIED_CALCULATION_EVIDENCE"]}, "capturedAt": {"type": "string", "format": "date-time"}}}
+  }
+}

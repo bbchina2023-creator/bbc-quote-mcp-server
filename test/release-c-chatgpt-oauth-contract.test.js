@@ -35,3 +35,19 @@ test("ChatGPT OAuth discovery advertises refresh-capable offline access without 
 test("authorization grants preserve offline_access when requested", () => {
   assert.match(contour, /requestedScopes\.filter\(\(scope\) => SUPPORTED_SCOPES\.includes\(scope\)\)/);
 });
+
+test("RC-CORR-06C publishes root securitySchemes and in-band OAuth challenges", () => {
+  assert.match(contour, /SERVER_VERSION = "1\.0\.5-rc-corr-06c-staging"/);
+  assert.match(contour, /RELEASE_ID = "RC-CORR-06C"/);
+  assert.match(contour, /MCP_AUTH_MODE = "PUBLIC_DISCOVERY_ROOT_SECURITY_SCHEMES_INBAND_OAUTH_V3"/);
+  assert.match(contour, /"mcp\/www_authenticate": \[challenge\]/);
+  assert.match(contour, /error="insufficient_scope"/);
+  assert.match(contour, /error_description=/);
+  assert.match(contour, /tool\.securitySchemes = schemes/);
+  assert.match(contour, /tool\._meta = \{ \.\.\.\(tool\._meta \|\| \{\}\), securitySchemes: schemes \}/);
+  assert.match(contour, /if \(!hasToolScope\(effectiveScopes, "quote\.read"\)\) return oauthToolChallenge\("quote\.read"\)/);
+  assert.match(contour, /if \(!hasToolScope\(effectiveScopes, "quote\.write"\)\) return oauthToolChallenge\("quote\.write"\)/);
+  assert.match(contour, /if \(!hasToolScope\(effectiveScopes, "quote\.generate"\)\) return oauthToolChallenge\("quote\.generate"\)/);
+  assert.doesNotMatch(contour, /mcpPayloadRequiresAuthorization/);
+  assert.match(contour, /tokenAudienceMatches\(tokenSummary\)/);
+});

@@ -1,0 +1,69 @@
+{
+  "releaseId": "RC-CORR-06A",
+  "candidateStatus": "PREPARED_NOT_DEPLOYED_CORRECTED_AFTER_PROVIDER_CONSTRUCTOR_GATE",
+  "purpose": "Restore ChatGPT Business MCP tool discovery without weakening tool execution security",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "sourceParentRelease": "RC-CORR-05",
+  "appsScriptVersion": "4.2.1",
+  "backendContourVersion": "1.0.5-rc-corr-03",
+  "workerVersion": "1.0.4-rc-corr-06a-staging",
+  "workerTarget": "bbc-quote-mcp-server-staging",
+  "previousCloudflareStagingVersionId": "10a7a181-3d4b-4904-bbc4-c3202a0aeaf1",
+  "productionWorkerTargeted": false,
+  "mcpAuthorizationModel": {
+    "discovery": "PUBLIC_PROTOCOL_DISCOVERY",
+    "toolExecution": "OAUTH_REQUIRED_HTTP_401",
+    "toolScopeEnforcement": [
+      "quote.read",
+      "quote.write",
+      "quote.generate"
+    ],
+    "tokenAudience": "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev/mcp",
+    "defenseInDepth": "PER_TOOL_SCOPE_CHECKS_RETAINED"
+  },
+  "toolContract": [
+    "validateCanonicalDeal",
+    "recalculateDeal",
+    "getVerifiedSnapshot",
+    "generateQuote",
+    "getDealStatus"
+  ],
+  "acceptance": {
+    "workerSyntax": "PASS",
+    "targetedWorkerOAuthTests": {
+      "passed": 28,
+      "failed": 0
+    },
+    "fullRc03NegativeSuite": "NOT_RERUN_IN_AUDIT_SANDBOX_MISSING_INSTALLED_ZOD",
+    "parentRc05FullSuite": {
+      "passed": 34,
+      "failed": 0
+    },
+    "wranglerDryRun": "REQUIRED_ON_AUTHORIZED_MAC; RC-CORR-06 FAILED_PRE_DEPLOY_AT_PROVIDER_CONSTRUCTOR_AND_DID_NOT_CHANGE_STAGING",
+    "livePublicInitialize": "REQUIRED_AFTER_DEPLOY",
+    "livePublicToolsList": "REQUIRED_AFTER_DEPLOY",
+    "liveUnauthenticatedToolCall401": "REQUIRED_AFTER_DEPLOY",
+    "chatGptBusinessFiveToolScan": "REQUIRED_AFTER_DEPLOY"
+  },
+  "deploymentPolicy": {
+    "directStagingOnly": true,
+    "gitPushBeforeStagingPass": false,
+    "productionPromotionRequiresStagingE2EPass": true
+  },
+  "artifacts": {
+    "src/staging-contour-rc.js": "2dc9e8e9f424a1f56c13f5e2e656b48cbd6b64b0d1612e681d5b9fbc95deee53",
+    "src/canonical-schema.js": "a3cb3beceb12c43e1a400424741f6c49feee3d0a9887bfeece64f18dfab7b5ec",
+    "src/oauth-security.js": "e92214dbbf8bde0d13caa4ac601405010b219a22b8c0ddb0e864eca0a5543ef9",
+    "test/release-c-do-wiring.test.js": "80248569d90c192a47ddd1b94c83d9ee8767984acb63f96dc527bbbb89cb0fc8",
+    "test/release-c-chatgpt-oauth-contract.test.js": "a24b34c545b58bbf384837292d936f1b15e26d5b7a04597895dd7d2284eb6834",
+    "test/oauth-security.test.js": "9ddd29a89763aa0bddb74c27fbd292f7e0fe10fe5cb0bf6bf272e37aa7041e64",
+    "test/rc-corr-03-negative-regression.test.js": "91b910c6535be87ab57dc6d72c511310b8f8f1450ee6e67b1e06bdf018763f05",
+    "package-lock.json": "ad66a54567d3bab5812d0b33443378a2c6f4a39cf7b61c8df254a6f8f30ffbb7",
+    "apps-script/BBC_KP_Generator_Code_v4.2.0_RELEASE_C_RC-CORR-03.gs": "3637e25487e836edad3efa441776b97ba4d4a3114ded59f15415352d029750eb",
+    "contracts/canonical-deal-v1.schema.json": "980e488de69fa9e98859ee30bf9603e0d255cd8647ce8c424a58c761a65c98a3",
+    "contracts/payment-schedule-v1.schema.json": "dba07b0dfe5c94d4ab8f4db26ced4f8ade567cd14edb42c3ba4b271146e53be9",
+    "contracts/rule-registry-v1.schema.json": "367d74ce42fa8fd68e27fb1fa0d4ff5ee89593d8724f0ac4de2bd57b7b7bb2e5",
+    "contracts/snapshot-v2.schema.json": "fbf080f7cf97e531ce6bff13d6cd43c361141c2e3401c72742cdaa90943764ad",
+    "RC-CORR-06A_DEPLOY_STAGING_ONLY.sh": "4594ed8aa0cbeb14e62acaecf43b0f05fabffa3c50a55a63efdcd740a013afcd"
+  }
+}

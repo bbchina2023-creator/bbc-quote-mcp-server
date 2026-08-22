@@ -14,7 +14,7 @@
   },
   "vars": { "GITHUB_CLIENT_ID": "Ov23livNiSnfHvxPXYjG" },
   "secrets": {
-    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL", "BBC_BACKEND_TOKEN"]
+    "required": ["GITHUB_CLIENT_SECRET", "BBC_BACKEND_URL", "BBC_BACKEND_TOKEN", "GPT_ACTION_KEY"]
   },
   "kv_namespaces": [
     { "binding": "OAUTH_KV", "id": "a4c1f60ed1244502be28a406b160d080" }

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bbc.example/contracts/payment-schedule-v1.schema.json",
+  "title": "BBC Payment Schedule v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scheduleId", "dealId", "scheduleType", "activeSchemeId", "currency", "confirmationState", "lineageRefs", "schemes"],
+  "properties": {
+    "scheduleId": {"type": "string", "minLength": 1},
+    "dealId": {"type": "string", "minLength": 1},
+    "scheduleType": {"enum": ["SUPPLIER_ITEM_PAYMENT", "CLIENT_PAYMENT"]},
+    "activeSchemeId": {"type": "string", "minLength": 1},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "confirmationState": {"$ref": "#/$defs/resolvedState"},
+    "lineageRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "schemes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scheme"}}
+  },
+  "$defs": {
+    "resolvedState": {"enum": ["CONFIRMED_BY_SOURCE", "CONFIRMED_BY_MANAGER", "CONFIRMED_BY_RULE", "CONFIRMED_BY_VERIFIED_CALCULATION", "CONFIRMED_ZERO"]},
+    "allocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["allocationId", "entityType", "entityId", "baseType", "zeroConfirmed", "confirmationState", "lineageRefs"],
+      "properties": {
+        "allocationId": {"type": "string", "minLength": 1}, "entityType": {"type": "string", "minLength": 1},
+        "entityId": {"type": "string", "minLength": 1}, "baseType": {"type": "string", "minLength": 1},
+        "percent": {"type": ["number", "null"], "minimum": 0}, "amount": {"type": ["number", "null"], "minimum": 0},
+        "zeroConfirmed": {"type": "boolean"}, "confirmationState": {"$ref": "#/$defs/resolvedState"},
+        "lineageRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }, "anyOf": [{"required": ["percent"]}, {"required": ["amount"]}]
+    },
+    "stage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stageId", "order", "zeroConfirmed", "confirmationState", "lineageRefs", "allocations"],
+      "properties": {
+        "stageId": {"type": "string", "minLength": 1}, "order": {"type": "integer", "minimum": 1},
+        "stageCode": {"type": ["string", "null"]}, "label": {"type": ["string", "null"]}, "dueCondition": {"type": ["string", "null"]},
+        "percent": {"type": ["number", "null"], "minimum": 0}, "amount": {"type": ["number", "null"], "minimum": 0},
+        "zeroConfirmed": {"type": "boolean"}, "confirmationState": {"$ref": "#/$defs/resolvedState"},
+        "lineageRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "allocations": {"type": "array", "items": {"$ref": "#/$defs/allocation"}}
+      }, "anyOf": [{"required": ["percent"]}, {"required": ["amount"]}, {"properties": {"allocations": {"minItems": 1}}}]
+    },
+    "scheme": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemeId", "active", "lineageRefs", "stages"],
+      "properties": {
+        "schemeId": {"type": "string", "minLength": 1}, "name": {"type": ["string", "null"]}, "applicability": {},
+        "active": {"type": "boolean"}, "lineageRefs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "stages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stage"}}
+      }
+    }
+  }
+}

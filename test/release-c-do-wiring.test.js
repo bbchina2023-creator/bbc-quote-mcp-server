@@ -20,16 +20,17 @@ function assertReleaseCConfig(config) {
   assert.match(config, /"version_metadata"\s*:/);
   assert.match(config, /"binding"\s*:\s*"CF_VERSION_METADATA"/);
   assert.match(config, /"secrets"\s*:/);
-  assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*,\s*"BBC_BACKEND_TOKEN"\s*\]/);
+  assert.match(config, /"required"\s*:\s*\[\s*"GITHUB_CLIENT_SECRET"\s*,\s*"BBC_BACKEND_URL"\s*,\s*"BBC_BACKEND_TOKEN"\s*,\s*"GPT_ACTION_KEY"\s*\]/);
   assert.match(config, /global_fetch_strictly_public/);
   assert.doesNotMatch(config, /"migrations"\s*:/);
 }
 
-test("custom one-time OAuth state no longer uses OAUTH_KV", () => {
+test("browser-bound GitHub OAuth state uses the Durable Object, never OAUTH_KV", () => {
   assert.doesNotMatch(contour, /createConsentRecord\(env\.OAUTH_KV/);
   assert.doesNotMatch(contour, /consumeConsentRecord\(env\.OAUTH_KV/);
   assert.doesNotMatch(contour, /env\.OAUTH_KV\.(?:put|get|delete)\(/);
-  assert.match(contour, /createConsentRecord\(env\.OAUTH_STATE/);
+  assert.doesNotMatch(contour, /createConsentRecord\(/);
+  assert.doesNotMatch(contour, /consumeConsentRecord\(/);
   assert.match(contour, /createGitHubStateRecord\(env\.OAUTH_STATE/);
   assert.match(contour, /consumeGitHubStateRecord\(env\.OAUTH_STATE/);
 });
@@ -63,24 +64,45 @@ test("backend authentication uses a separate body token secret", () => {
   assert.doesNotMatch(contour, /searchParams\.set\([^\n]*token/i);
 });
 
-test("per-tool scopes come from the validated OAuth access token", () => {
-  assert.match(contour, /class McpApiHandler extends WorkerEntrypoint/);
+test("MCP discovery stays public and tools/list promotes first-class OAuth securitySchemes", () => {
+  assert.match(contour, /oauthToolChallenge/);
+  assert.match(contour, /"mcp\/www_authenticate": \[challenge\]/);
+  assert.match(contour, /resource_metadata="\$\{MCP_RESOURCE_METADATA\}"/);
+  assert.match(contour, /tool\.securitySchemes = schemes/);
+  assert.match(contour, /tool\._meta = \{ \.\.\.\(tool\._meta \|\| \{\}\), securitySchemes: schemes \}/);
+  assert.match(contour, /error="insufficient_scope"/);
+  assert.match(contour, /url\.pathname === "\/mcp"/);
+  assert.doesNotMatch(contour, /apiRoute:\s*"\/mcp"/);
+  assert.match(contour, /apiRoute:\s*"\/__oauth_provider_internal_sentinel"/);
+  assert.match(contour, /apiHandler:\s*oauthProviderSentinelHandler/);
+});
+
+test("per-tool scopes come from a validated resource-bound OAuth access token", () => {
   assert.match(contour, /OAUTH_PROVIDER\.unwrapToken\(match\[1\]\)/);
   assert.match(contour, /Array\.isArray\(tokenSummary\.scope\)/);
-  assert.match(contour, /createServer\(this\.env, tokenSummary\.scope\)/);
-  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.read"\)/);
-  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.write"\)/);
-  assert.match(contour, /requireToolScope\(effectiveScopes, "quote\.generate"\)/);
+  assert.match(contour, /tokenAudienceMatches\(tokenSummary\)/);
+  assert.match(contour, /createServer\(env, auth\.scopes\)/);
+  assert.match(contour, /hasToolScope\(effectiveScopes, "quote\.read"\)/);
+  assert.match(contour, /hasToolScope\(effectiveScopes, "quote\.write"\)/);
+  assert.match(contour, /hasToolScope\(effectiveScopes, "quote\.generate"\)/);
   assert.doesNotMatch(contour, /extra\?\.authInfo\?\.scopes/);
   assert.doesNotMatch(contour, /resourceScopes/);
 });
 
 test("health contract advertises Durable Object state and Worker version metadata", () => {
-  assert.match(contour, /DURABLE_OBJECT_ONE_TIME_STATE_V1/);
+  assert.match(contour, /DIRECT_GITHUB_REDIRECT_STATE_BOUND_V3/);
   assert.match(contour, /OAUTH_STATE_DURABLE_OBJECT/);
   assert.match(contour, /CF_VERSION_METADATA/);
   assert.match(contour, /releaseId:\s*RELEASE_ID/);
   assert.match(contour, /workerEntrypoint:\s*"src\/staging-contour-rc\.js"/);
+});
+
+test("authorization starts GitHub directly without the fragile intermediate consent POST", () => {
+  assert.match(contour, /beginGitHubAuthorization/);
+  assert.match(contour, /oauth\.authorize\.redirect\.github/);
+  assert.doesNotMatch(contour, /CSRF validation failed/);
+  assert.doesNotMatch(contour, /name="consent_id"/);
+  assert.doesNotMatch(contour, /handleAuthorizationConsent/);
 });
 
 test("ChatGPT OAuth client compatibility is pinned to the verified provider generation", () => {

@@ -71,6 +71,50 @@ test("cross-origin consent POST headers are rejected", () => {
   assert.deepEqual(validateConsentRequestHeaders(request, ORIGIN), { ok: false, reason: "cross_origin" });
 });
 
+test("ChatGPT top-level OAuth POST with cross-site Fetch Metadata is accepted by the one-time token gate", () => {
+  const request = new Request(`${ORIGIN}/authorize`, {
+    method: "POST",
+    headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" },
+  });
+  assert.deepEqual(validateConsentRequestHeaders(request, ORIGIN), {
+    ok: true,
+    reason: "synchronizer_token:cross-site",
+  });
+});
+
+test("opaque browser origin is accepted only as an advisory signal for the one-time token gate", () => {
+  const request = new Request(`${ORIGIN}/authorize`, {
+    method: "POST",
+    headers: { origin: "null", "sec-fetch-site": "cross-site" },
+  });
+  assert.deepEqual(validateConsentRequestHeaders(request, ORIGIN), {
+    ok: true,
+    reason: "opaque_origin_token:cross-site",
+  });
+});
+
+test("foreign Referer is rejected when Origin is unavailable", () => {
+  const request = new Request(`${ORIGIN}/authorize`, {
+    method: "POST",
+    headers: { referer: "https://evil.example/consent", "sec-fetch-site": "cross-site" },
+  });
+  assert.deepEqual(validateConsentRequestHeaders(request, ORIGIN), {
+    ok: false,
+    reason: "cross_origin_referer",
+  });
+});
+
+test("same-origin Referer is accepted when Origin is unavailable", () => {
+  const request = new Request(`${ORIGIN}/authorize`, {
+    method: "POST",
+    headers: { referer: `${ORIGIN}/authorize`, "sec-fetch-site": "same-origin" },
+  });
+  assert.deepEqual(validateConsentRequestHeaders(request, ORIGIN), {
+    ok: true,
+    reason: "same_origin_referer",
+  });
+});
+
 test("secure OAuth cookie is host-only, HttpOnly, Secure and SameSite=Lax", () => {
   const cookie = secureCookie(STATE_COOKIE_NAME, "abc", OAUTH_FLOW_TTL_SECONDS);
   assert.match(cookie, /^__Host-BBC_MCP_STATE=abc;/);

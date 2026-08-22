@@ -1,0 +1,42 @@
+{
+  "releaseId": "RC-CORR-04",
+  "candidateStatus": "STAGING_DEPLOYED_POST_FIX_CHATGPT_RECONNECT_REQUIRED",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "branch": "codex/rc-corr-03",
+  "appsScriptVersion": "4.2.1",
+  "backendContourVersion": "1.0.5-rc-corr-03",
+  "workerVersion": "1.0.2-rc-corr-04-staging",
+  "workerTarget": "bbc-quote-mcp-server-staging",
+  "appsScriptStagingDeploymentId": "AKfycbwAYxOiiWNsLnlspEYQfvlJKipSGJjeWdWIeKGlnsTJZRUM4zSsiyGSbVhaUT84Yws7",
+  "cloudflareStagingVersionId": "619b611d-2872-4e85-8d23-af6a9118ce8f",
+  "cloudflareStagingTrafficPercent": 100,
+  "productionWorkerTargeted": false,
+  "artifacts": {
+    "apps-script/BBC_KP_Generator_Code_v4.2.0_RELEASE_C_RC-CORR-03.gs": "3637e25487e836edad3efa441776b97ba4d4a3114ded59f15415352d029750eb",
+    "src/oauth-security.js": "e92214dbbf8bde0d13caa4ac601405010b219a22b8c0ddb0e864eca0a5543ef9",
+    "src/canonical-schema.js": "a3cb3beceb12c43e1a400424741f6c49feee3d0a9887bfeece64f18dfab7b5ec",
+    "src/staging-contour-rc.js": "a2621541a075c61ef8108b4edeb4e6817b2179660abbbb08134fb2f39395d942",
+    "contracts/canonical-deal-v1.schema.json": "980e488de69fa9e98859ee30bf9603e0d255cd8647ce8c424a58c761a65c98a3",
+    "contracts/payment-schedule-v1.schema.json": "dba07b0dfe5c94d4ab8f4db26ced4f8ade567cd14edb42c3ba4b271146e53be9",
+    "contracts/rule-registry-v1.schema.json": "367d74ce42fa8fd68e27fb1fa0d4ff5ee89593d8724f0ac4de2bd57b7b7bb2e5",
+    "contracts/snapshot-v2.schema.json": "fbf080f7cf97e531ce6bff13d6cd43c361141c2e3401c72742cdaa90943764ad",
+    "package-lock.json": "ad66a54567d3bab5812d0b33443378a2c6f4a39cf7b61c8df254a6f8f30ffbb7",
+    "test/oauth-security.test.js": "9ddd29a89763aa0bddb74c27fbd292f7e0fe10fe5cb0bf6bf272e37aa7041e64",
+    "test/rc-corr-03-negative-regression.test.js": "91b910c6535be87ab57dc6d72c511310b8f8f1450ee6e67b1e06bdf018763f05"
+  },
+  "acceptance": {
+    "nodeTests": {"passed": 33, "failed": 0},
+    "wranglerDryRun": "PASS",
+    "workerHealth": "PASS",
+    "oauthDiscovery": "PASS",
+    "oauthConsentGet": "PASS",
+    "oauthConsentPostOpaqueCrossSite": "PASS_REDIRECT_TO_GITHUB",
+    "explicitForeignOriginRefererRejected": "PASS",
+    "chatGptReconnect": "REQUIRED_ONCE_AFTER_FIX"
+  },
+  "deploymentPolicy": {
+    "stagingFirst": true,
+    "oneControlledE2E": true,
+    "productionPromotionRequiresStagingPass": true
+  }
+}

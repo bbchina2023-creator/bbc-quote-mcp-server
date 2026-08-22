@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  title: BBC KP Generator Actions
+  version: 1.1.0
+  description: >-
+    Authenticated transport from the BBC working Custom GPT to the existing deterministic
+    BBC calculation and quote core. The GPT must not calculate financial results itself.
+servers:
+  - url: https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev
+security:
+  - bearerAuth: []
+paths:
+  /actions/validate-canonical-deal:
+    post:
+      operationId: validateCanonicalDeal
+      summary: Validate Canonical Deal
+      description: >-
+        Validate Canonical Deal Contract v1 and all calculation/quote gates. Call this before
+        recalculation. This operation does not create a snapshot or quote documents.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [canonicalDealJson]
+              properties:
+                canonicalDealJson:
+                  type: string
+                  minLength: 2
+                  maxLength: 85000
+                  description: >-
+                    Full Canonical Deal Contract v1 serialized as one JSON string. When source data is attached as a JSON file,
+                    pass the exact file contents as this string. Do not wrap it in another object and do not summarize it.
+      responses:
+        '200':
+          description: Validation result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /actions/recalculate-deal:
+    post:
+      operationId: recalculateDeal
+      summary: Create VERIFIED Snapshot v2
+      description: >-
+        Deterministically calculate the exact Canonical Deal that passed validation and persist
+        an immutable VERIFIED Snapshot v2. Reuse the same idempotencyKey for retries of the same request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [canonicalDealJson, idempotencyKey]
+              properties:
+                canonicalDealJson:
+                  type: string
+                  minLength: 2
+                  maxLength: 85000
+                  description: >-
+                    Exact Canonical Deal Contract v1 that passed validateCanonicalDeal, serialized as one JSON string.
+                    Reuse the exact same JSON text for recalculation; do not reconstruct or summarize it.
+                idempotencyKey:
+                  type: string
+                  minLength: 8
+                  maxLength: 300
+                  description: Stable key reused for all retries of this exact recalculation request.
+      responses:
+        '200':
+          description: VERIFIED Snapshot creation result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /actions/get-verified-snapshot:
+    post:
+      operationId: getVerifiedSnapshot
+      summary: Get VERIFIED Snapshot v2 summary
+      description: >-
+        Retrieve a compact verified Snapshot v2 summary either by snapshotId or by dealId.
+        Full snapshot payload is intentionally not exposed through GPT Actions to keep responses bounded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                snapshotId: {type: string, minLength: 1, maxLength: 300}
+                dealId: {type: string, minLength: 1, maxLength: 300}
+              oneOf:
+                - required: [snapshotId]
+                - required: [dealId]
+      responses:
+        '200':
+          description: VERIFIED Snapshot summary.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /actions/generate-quote:
+    post:
+      operationId: generateQuote
+      summary: Generate quote documents from VERIFIED Snapshot v2
+      description: >-
+        Generate Google Sheets, XLSX and PDF strictly from the specified latest VERIFIED Snapshot v2.
+        Reuse the same idempotencyKey for retries. The only supported outputProfile is FULL_MASTER_WORKBOOK.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [snapshotId, idempotencyKey]
+              properties:
+                snapshotId: {type: string, minLength: 1, maxLength: 300}
+                idempotencyKey:
+                  type: string
+                  minLength: 8
+                  maxLength: 300
+                  description: Stable key reused for all retries of this exact document-generation request.
+                outputProfile:
+                  type: string
+                  enum: [FULL_MASTER_WORKBOOK]
+                  default: FULL_MASTER_WORKBOOK
+      responses:
+        '200':
+          description: Generated quote links and acceptance evidence.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /actions/get-deal-status:
+    post:
+      operationId: getDealStatus
+      summary: Get deal status
+      description: >-
+        Return the latest verified Snapshot v2 summary and quote artifacts bound to that exact latest snapshot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [dealId]
+              properties:
+                dealId: {type: string, minLength: 1, maxLength: 300}
+      responses:
+        '200':
+          description: Current deal status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: Invalid or unsafe request payload.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Unauthorized:
+      description: Missing or invalid GPT Action API key.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok: {type: boolean}
+        error: {type: string}
+        maxBytes: {type: integer}
+    ActionResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok: {type: boolean}
+        action: {type: string}
+        actionBridgeVersion: {type: string}
+        durationMs: {type: integer}
+        result: {type: object, additionalProperties: true}
+        error: {type: string}

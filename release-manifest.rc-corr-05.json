@@ -1,0 +1,37 @@
+{
+  "releaseId": "RC-CORR-05",
+  "candidateStatus": "STAGING_DEPLOYED_DIRECT_OAUTH_REDIRECT_VERIFIED",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "branch": "codex/rc-corr-03",
+  "appsScriptVersion": "4.2.1",
+  "backendContourVersion": "1.0.5-rc-corr-03",
+  "workerVersion": "1.0.3-rc-corr-05-staging",
+  "workerTarget": "bbc-quote-mcp-server-staging",
+  "cloudflareStagingVersionId": "10a7a181-3d4b-4904-bbc4-c3202a0aeaf1",
+  "cloudflareStagingTrafficPercent": 100,
+  "productionWorkerTargeted": false,
+  "artifacts": {
+    "src/oauth-security.js": "e92214dbbf8bde0d13caa4ac601405010b219a22b8c0ddb0e864eca0a5543ef9",
+    "src/staging-contour-rc.js": "89ce202c2f931e1df5e92ac040e6fe8b6771c12eadccd46fe070b3689a2fe053",
+    "test/oauth-security.test.js": "9ddd29a89763aa0bddb74c27fbd292f7e0fe10fe5cb0bf6bf272e37aa7041e64",
+    "test/release-c-do-wiring.test.js": "9f1b4eea6af64264bfc9a5e39cd341b06e9eed1eecd1a5916380e76af7684fc2",
+    "package-lock.json": "ad66a54567d3bab5812d0b33443378a2c6f4a39cf7b61c8df254a6f8f30ffbb7"
+  },
+  "acceptance": {
+    "nodeTests": {"passed": 34, "failed": 0},
+    "wranglerDryRun": "PASS",
+    "workerHealth": "PASS",
+    "oauthDiscovery": "PASS",
+    "oauthAuthorizeTopLevelCrossSite": "PASS_302_TO_GITHUB",
+    "browserBoundStateCookie": "PASS",
+    "intermediateConsentPost": "REMOVED",
+    "chatGptReconnect": "PASS",
+    "legacyBusinessAppToolSnapshot": "FAIL_FROZEN_FOUR_TOOLS",
+    "newBusinessAppFiveToolScan": "REQUIRED"
+  },
+  "deploymentPolicy": {
+    "stagingFirst": true,
+    "oneControlledE2E": true,
+    "productionPromotionRequiresStagingPass": true
+  }
+}

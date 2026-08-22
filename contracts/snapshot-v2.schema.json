@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bbc.example/contracts/snapshot-v2.schema.json",
+  "title": "BBC Verified Snapshot v2",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["snapshotVersion", "snapshotId", "dealId", "canonicalId", "canonicalRevision", "canonicalHash", "paymentHash", "ruleSetId", "ruleSetVersion", "ruleSetHash", "codeVersion", "calculationEngineVersion", "createdAt", "createdBy", "status", "immutable", "calculationResult", "checks", "snapshotHash"],
+  "properties": {
+    "snapshotVersion": {"const": "2.0"}, "snapshotId": {"type": "string", "minLength": 1}, "dealId": {"type": "string", "minLength": 1},
+    "canonicalId": {"type": "string", "minLength": 1}, "canonicalRevision": {"type": "integer", "minimum": 1},
+    "canonicalHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "paymentHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "ruleSetId": {"type": "string", "minLength": 1}, "ruleSetVersion": {"type": "string", "minLength": 1}, "ruleSetHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "codeVersion": {"type": "string", "minLength": 1}, "calculationEngineVersion": {"type": "string", "minLength": 1},
+    "createdAt": {"type": "string", "format": "date-time"}, "createdBy": {"type": "string", "minLength": 1},
+    "status": {"const": "VERIFIED"}, "immutable": {"const": true}, "calculationResult": {"type": "object"}, "checks": {"type": "array"},
+    "snapshotHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

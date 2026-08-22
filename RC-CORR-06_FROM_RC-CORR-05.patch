@@ -1,0 +1,122 @@
+--- /mnt/data/rc06_compare/staging-contour-rc.RC05.js	2026-08-20 07:16:57.709149418 +0000
++++ src/staging-contour-rc.js	2026-08-20 07:17:25.650953118 +0000
+@@ -1,5 +1,4 @@
+ import OAuthProvider from "@cloudflare/workers-oauth-provider";
+-import { WorkerEntrypoint } from "cloudflare:workers";
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { createMcpHandler } from "agents/mcp";
+ import { z } from "zod";
+@@ -19,15 +18,17 @@
+ export { OAuthStateDurableObject } from "./oauth-state-do.js";
+ 
+ const SERVER_NAME = "BBC KP Generator — Document Contour";
+-const SERVER_VERSION = "1.0.3-rc-corr-05-staging";
+-const RELEASE_ID = "RC-CORR-05";
++const SERVER_VERSION = "1.0.4-rc-corr-06-staging";
++const RELEASE_ID = "RC-CORR-06";
+ const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.5-rc-corr-03";
+ const SOURCE_BASE_COMMIT = "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1";
+ const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
+-const SCOPE_ENFORCEMENT = "OAUTH_PROVIDER_UNWRAP_TOKEN_SCOPE_V1";
++const SCOPE_ENFORCEMENT = "HTTP_401_ALL_TOOL_CALLS_SCOPE_V2";
+ const BACKEND_TOKEN_MODE = "JSON_BODY_SECRET";
++const MCP_AUTH_MODE = "PUBLIC_DISCOVERY_PROTECTED_TOOL_CALLS_V1";
+ const MCP_ORIGIN = "https://bbc-quote-mcp-server-staging.bbchina2023.workers.dev";
+ const MCP_RESOURCE = `${MCP_ORIGIN}/mcp`;
++const MCP_RESOURCE_METADATA = `${MCP_ORIGIN}/.well-known/oauth-protected-resource/mcp`;
+ const GITHUB_CALLBACK = `${MCP_ORIGIN}/callback`;
+ const ALLOWED_GITHUB_USER_ID = 307006935;
+ export const RESOURCE_SCOPES = ["quote.read", "quote.write", "quote.generate"];
+@@ -324,22 +325,64 @@
+   }
+ }
+ 
+-export class McpApiHandler extends WorkerEntrypoint {
+-  async fetch(request) {
+-    const authorization = String(request.headers.get("authorization") || "");
+-    const match = /^Bearer\s+(.+)$/i.exec(authorization);
+-    if (!match) return textResponse("Unauthorized", 401);
+-    const tokenSummary = await this.env.OAUTH_PROVIDER.unwrapToken(match[1]);
+-    if (!tokenSummary || !Array.isArray(tokenSummary.scope)) {
+-      return textResponse("Unauthorized", 401);
+-    }
+-    return createMcpHandler(createServer(this.env, tokenSummary.scope))(request, this.env, this.ctx);
++function oauthChallengeResponse() {
++  const headers = new Headers({
++    "cache-control": "no-store",
++    "content-type": "text/plain; charset=utf-8",
++    "www-authenticate": `Bearer realm="OAuth", resource_metadata="${MCP_RESOURCE_METADATA}"`,
++    "access-control-expose-headers": "WWW-Authenticate",
++  });
++  return new Response("Unauthorized", { status: 401, headers });
++}
++
++function tokenAudienceMatches(tokenSummary) {
++  const audience = tokenSummary?.audience;
++  if (typeof audience === "string") return audience === MCP_RESOURCE;
++  if (Array.isArray(audience)) return audience.includes(MCP_RESOURCE);
++  return false;
++}
++
++function mcpPayloadRequiresAuthorization(payload) {
++  const messages = Array.isArray(payload) ? payload : [payload];
++  return messages.some((message) => String(message?.method || "") === "tools/call");
++}
++
++async function inspectMcpRequest(request) {
++  if (request.method !== "POST") return { requiresAuthorization: false };
++  try {
++    const payload = await request.clone().json();
++    return { requiresAuthorization: mcpPayloadRequiresAuthorization(payload) };
++  } catch {
++    return { requiresAuthorization: false };
+   }
+ }
+ 
++async function resolveMcpScopes(request, env, requiresAuthorization) {
++  const authorization = String(request.headers.get("authorization") || "");
++  const match = /^Bearer\s+(.+)$/i.exec(authorization);
++  if (!match) {
++    return requiresAuthorization
++      ? { ok: false, response: oauthChallengeResponse() }
++      : { ok: true, scopes: [] };
++  }
++  const tokenSummary = await env.OAUTH_PROVIDER.unwrapToken(match[1]);
++  if (!tokenSummary || !Array.isArray(tokenSummary.scope) || !tokenAudienceMatches(tokenSummary)) {
++    return { ok: false, response: oauthChallengeResponse() };
++  }
++  return { ok: true, scopes: tokenSummary.scope };
++}
++
++async function handleMcpRequest(request, env, ctx) {
++  const inspection = await inspectMcpRequest(request);
++  const auth = await resolveMcpScopes(request, env, inspection.requiresAuthorization);
++  if (!auth.ok) return auth.response;
++  return createMcpHandler(createServer(env, auth.scopes))(request, env, ctx);
++}
++
+ const defaultHandler = {
+-  async fetch(request, env) {
++  async fetch(request, env, ctx) {
+     const url = new URL(request.url);
++    if (url.pathname === "/mcp") return handleMcpRequest(request, env, ctx);
+     if (url.pathname === "/health") {
+       const versionMeta = env.CF_VERSION_METADATA || null;
+       return Response.json({
+@@ -354,6 +397,7 @@
+         oneTimeStateStorage: "OAUTH_STATE_DURABLE_OBJECT",
+         oauthProviderStorage: "OAUTH_KV",
+         scopeEnforcement: SCOPE_ENFORCEMENT,
++        mcpAuthMode: MCP_AUTH_MODE,
+         backendTokenMode: BACKEND_TOKEN_MODE,
+         workerEntrypoint: "src/staging-contour-rc.js",
+         environment: "staging",
+@@ -382,8 +426,6 @@
+ };
+ 
+ export default new OAuthProvider({
+-  apiRoute: "/mcp",
+-  apiHandler: McpApiHandler,
+   defaultHandler,
+   authorizeEndpoint: "/authorize",
+   tokenEndpoint: "/oauth/token",

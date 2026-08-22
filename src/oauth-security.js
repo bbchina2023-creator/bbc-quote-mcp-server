@@ -21,13 +21,28 @@ export function constantTimeEqual(left, right) {
 
 export function validateConsentRequestHeaders(request, allowedOrigin) {
   const origin = String(request.headers.get("origin") || "").trim();
-  if (origin && origin !== allowedOrigin) return { ok: false, reason: "cross_origin" };
+  if (origin && origin !== "null" && origin !== allowedOrigin) {
+    return { ok: false, reason: "cross_origin" };
+  }
+
+  const referer = String(request.headers.get("referer") || "").trim();
+  if (referer) {
+    let refererOrigin;
+    try { refererOrigin = new URL(referer).origin; }
+    catch { return { ok: false, reason: "invalid_referer" }; }
+    if (refererOrigin !== allowedOrigin) return { ok: false, reason: "cross_origin_referer" };
+  }
 
   const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
-  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
-    return { ok: false, reason: "cross_site" };
-  }
-  return { ok: true, reason: origin ? "same_origin" : "synchronizer_token" };
+  // Fetch Metadata is advisory here. OAuth clients can launch consent in a new
+  // top-level browsing context where Chromium reports `cross-site`, `same-site`
+  // or an opaque (`Origin: null`) initiator. The actual CSRF control is the
+  // random, server-stored, one-time synchronizer token consumed below. An
+  // explicit foreign Origin/Referer is still rejected above.
+  if (origin === allowedOrigin) return { ok: true, reason: "same_origin" };
+  if (referer) return { ok: true, reason: "same_origin_referer" };
+  if (origin === "null") return { ok: true, reason: `opaque_origin_token:${fetchSite || "unknown"}` };
+  return { ok: true, reason: `synchronizer_token:${fetchSite || "unknown"}` };
 }
 
 function getOneTimeStateStub(stateNamespace, objectName) {

@@ -1,0 +1,25 @@
+{
+  "releaseId": "RC-CORR-06C",
+  "environment": "staging",
+  "workerName": "bbc-quote-mcp-server-staging",
+  "serverVersion": "1.0.5-rc-corr-06c-staging",
+  "sourceSha256": "e40559e409485517c666984579c0eab5b90805f5f9cad59cf4c8f729408a401e",
+  "sourceBaseCommit": "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1",
+  "mcpAuthMode": "PUBLIC_DISCOVERY_ROOT_SECURITY_SCHEMES_INBAND_OAUTH_V3",
+  "scopeEnforcement": "ROOT_SECURITY_SCHEMES_INBAND_MCP_AUTH_CHALLENGE_V4",
+  "toolContract": [
+    "validateCanonicalDeal",
+    "recalculateDeal",
+    "getVerifiedSnapshot",
+    "generateQuote",
+    "getDealStatus"
+  ],
+  "changeScope": "Worker ChatGPT tool metadata/auth interoperability only; Apps Script and production untouched",
+  "acceptance": {
+    "initializeAnonymous": 200,
+    "toolsListAnonymous": "exact five tools",
+    "rootSecuritySchemes": "oauth2 with exact per-tool scope plus _meta mirror",
+    "unauthenticatedToolCall": "HTTP 200 MCP CallToolResult isError with _meta[mcp/www_authenticate], error and error_description",
+    "backendCallWithoutScope": "must not occur"
+  }
+}
