@@ -2,13 +2,13 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpHandler } from "agents/mcp";
 import { z } from "zod";
-import { canonicalDealSchema } from "./canonical-schema.js";
 import {
   ACTION_BODY_MAX_BYTES,
   ACTION_BRIDGE_VERSION,
   ACTION_RESPONSE_MAX_BYTES,
   ACTION_ROUTE_TO_BACKEND,
   createActionBridgeHandler,
+  normalizeActionArguments,
 } from "./action-bridge.js";
 import {
   OAUTH_FLOW_TTL_SECONDS,
@@ -161,17 +161,21 @@ function createServer(env, effectiveScopes) {
     {
       title: "Проверить Canonical Deal",
       description:
-        "Read-only validation of Canonical Deal Contract v1 assembled by ChatGPT from the current uploaded documents. " +
+        "Read-only validation of Canonical Deal Contract v1 from the exact complete JSON file text supplied in canonicalDealJson. " +
+        "Do not reconstruct, summarize, normalize or partially copy the JSON. " +
         "Checks schema, lineage, rule authority, payment schedule, quote readiness and deterministic preview. " +
         "The backend does not semantically parse source documents.",
-      inputSchema: { canonicalDeal: canonicalDealSchema },
+      inputSchema: {
+        canonicalDealJson: z.string().min(2).max(ACTION_BODY_MAX_BYTES - 1024),
+      },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       _meta: oauthToolMeta("quote.read"),
     },
     async (args) => {
       try {
         if (!hasToolScope(effectiveScopes, "quote.read")) return oauthToolChallenge("quote.read");
-        return successResult(await callBackend(env, "validateCanonicalDeal", args));
+        const normalized = normalizeActionArguments("validateCanonicalDeal", args);
+        return successResult(await callBackend(env, "validateCanonicalDeal", normalized));
       } catch (error) { return errorResult(error); }
     },
   );
@@ -181,10 +185,12 @@ function createServer(env, effectiveScopes) {
     {
       title: "Создать verified Snapshot v2",
       description:
-        "Deterministically calculates an already prepared Canonical Deal Contract v1, persists immutable canonical/payment/rule records, " +
+        "Deterministically calculates the exact complete Canonical Deal JSON file text supplied in canonicalDealJson. " +
+        "Use the identical JSON text that passed validateCanonicalDeal; do not reconstruct, summarize, normalize or partially copy it. " +
+        "Persists immutable canonical/payment/rule records " +
         "and creates VERIFIED Snapshot v2. Requires a stable idempotency key. No raw-import reads and no legacy calculation writes.",
       inputSchema: {
-        canonicalDeal: canonicalDealSchema,
+        canonicalDealJson: z.string().min(2).max(ACTION_BODY_MAX_BYTES - 1024),
         idempotencyKey: z.string().min(8),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -193,7 +199,8 @@ function createServer(env, effectiveScopes) {
     async (args) => {
       try {
         if (!hasToolScope(effectiveScopes, "quote.write")) return oauthToolChallenge("quote.write");
-        return successResult(await callBackend(env, "recalculateDeal", args));
+        const normalized = normalizeActionArguments("recalculateDeal", args);
+        return successResult(await callBackend(env, "recalculateDeal", normalized));
       } catch (error) { return errorResult(error); }
     },
   );

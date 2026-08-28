@@ -48,8 +48,9 @@ test("entrypoint exports the Durable Object class", () => {
   assert.match(durableObject, /export class OAuthStateDurableObject extends DurableObject/);
 });
 
-test("strict canonical schema is bound at the MCP boundary", () => {
-  assert.match(contour, /import \{ canonicalDealSchema \} from "\.\/canonical-schema\.js";/);
+test("MCP canonical transport is bounded JSON text and strict schema remains regression-tested", () => {
+  assert.match(contour, /canonicalDealJson: z\.string\(\)\.min\(2\)\.max\(ACTION_BODY_MAX_BYTES - 1024\)/);
+  assert.match(contour, /normalizeActionArguments/);
   assert.doesNotMatch(contour, /z\.record\(z\.string\(\), z\.unknown\(\)\)/);
   assert.match(canonicalSchema, /canonicalId:\s*z\.string\(\)\.min\(1\)/);
   assert.match(canonicalSchema, /paymentSchedules:\s*z\.array\(paymentScheduleSchema\)/);

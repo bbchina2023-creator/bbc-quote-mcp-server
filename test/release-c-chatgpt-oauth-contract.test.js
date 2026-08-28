@@ -21,6 +21,22 @@ test("Release C exposes exactly the five final manager-facing tools", () => {
   }
 });
 
+test("canonical Actions expose exact JSON text transport instead of model-reconstructed objects", () => {
+  const validateBlock = contour.slice(
+    contour.indexOf('server.registerTool(\n    "validateCanonicalDeal"'),
+    contour.indexOf('server.registerTool(\n    "recalculateDeal"'),
+  );
+  const recalculateBlock = contour.slice(
+    contour.indexOf('server.registerTool(\n    "recalculateDeal"'),
+    contour.indexOf('server.registerTool(\n    "getVerifiedSnapshot"'),
+  );
+  for (const block of [validateBlock, recalculateBlock]) {
+    assert.match(block, /canonicalDealJson: z\.string\(\)\.min\(2\)\.max\(ACTION_BODY_MAX_BYTES - 1024\)/);
+    assert.doesNotMatch(block, /canonicalDeal: canonicalDealSchema/);
+    assert.match(block, /normalizeActionArguments/);
+  }
+});
+
 test("ChatGPT OAuth discovery advertises refresh-capable offline access without polluting resource scopes", () => {
   assert.equal(pkg.dependencies["@cloudflare/workers-oauth-provider"], "0.10.3");
   assert.match(contour, /export const RESOURCE_SCOPES = \["quote\.read", "quote\.write", "quote\.generate"\];/);
