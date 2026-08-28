@@ -2,13 +2,13 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpHandler } from "agents/mcp";
 import { z } from "zod";
+import { canonicalDealSchema } from "./canonical-schema.js";
 import {
   ACTION_BODY_MAX_BYTES,
   ACTION_BRIDGE_VERSION,
   ACTION_RESPONSE_MAX_BYTES,
   ACTION_ROUTE_TO_BACKEND,
   createActionBridgeHandler,
-  normalizeActionArguments,
 } from "./action-bridge.js";
 import {
   OAUTH_FLOW_TTL_SECONDS,
@@ -27,7 +27,7 @@ export { OAuthStateDurableObject } from "./oauth-state-do.js";
 const SERVER_NAME = "BBC KP Generator — Document Contour";
 const SERVER_VERSION = "1.0.5-rc-corr-06c-staging";
 const RELEASE_ID = "RC-CORR-06C";
-const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.9-rc-corr-26";
+const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.10-rc-corr-27";
 const SOURCE_BASE_COMMIT = "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1";
 const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
 const SCOPE_ENFORCEMENT = "ROOT_SECURITY_SCHEMES_INBAND_MCP_AUTH_CHALLENGE_V4";
@@ -161,21 +161,17 @@ function createServer(env, effectiveScopes) {
     {
       title: "Проверить Canonical Deal",
       description:
-        "Read-only validation of Canonical Deal Contract v1 from the exact complete JSON file text supplied in canonicalDealJson. " +
-        "Do not reconstruct, summarize, normalize or partially copy the JSON. " +
+        "Read-only validation of Canonical Deal Contract v1 assembled from the current uploaded file. " +
         "Checks schema, lineage, rule authority, payment schedule, quote readiness and deterministic preview. " +
-        "The backend does not semantically parse source documents.",
-      inputSchema: {
-        canonicalDealJson: z.string().min(2).max(ACTION_BODY_MAX_BYTES - 1024),
-      },
+        "On success returns validatedCanonicalRef for recalculateDeal; the backend does not semantically parse source documents.",
+      inputSchema: { canonicalDeal: canonicalDealSchema },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       _meta: oauthToolMeta("quote.read"),
     },
     async (args) => {
       try {
         if (!hasToolScope(effectiveScopes, "quote.read")) return oauthToolChallenge("quote.read");
-        const normalized = normalizeActionArguments("validateCanonicalDeal", args);
-        return successResult(await callBackend(env, "validateCanonicalDeal", normalized));
+        return successResult(await callBackend(env, "validateCanonicalDeal", args));
       } catch (error) { return errorResult(error); }
     },
   );
@@ -185,12 +181,11 @@ function createServer(env, effectiveScopes) {
     {
       title: "Создать verified Snapshot v2",
       description:
-        "Deterministically calculates the exact complete Canonical Deal JSON file text supplied in canonicalDealJson. " +
-        "Use the identical JSON text that passed validateCanonicalDeal; do not reconstruct, summarize, normalize or partially copy it. " +
-        "Persists immutable canonical/payment/rule records " +
+        "Deterministically calculates the exact Canonical Deal previously accepted by validateCanonicalDeal. " +
+        "Pass only its short-lived validatedCanonicalRef; never reconstruct or resend the Canonical. Persists immutable records " +
         "and creates VERIFIED Snapshot v2. Requires a stable idempotency key. No raw-import reads and no legacy calculation writes.",
       inputSchema: {
-        canonicalDealJson: z.string().min(2).max(ACTION_BODY_MAX_BYTES - 1024),
+        validatedCanonicalRef: z.string().regex(/^VCAN1-[A-Za-z0-9-]{20,220}$/),
         idempotencyKey: z.string().min(8),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -199,8 +194,7 @@ function createServer(env, effectiveScopes) {
     async (args) => {
       try {
         if (!hasToolScope(effectiveScopes, "quote.write")) return oauthToolChallenge("quote.write");
-        const normalized = normalizeActionArguments("recalculateDeal", args);
-        return successResult(await callBackend(env, "recalculateDeal", normalized));
+        return successResult(await callBackend(env, "recalculateDeal", args));
       } catch (error) { return errorResult(error); }
     },
   );

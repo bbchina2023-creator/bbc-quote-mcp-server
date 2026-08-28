@@ -130,9 +130,9 @@ export function normalizeActionArguments(action, args) {
       return { canonicalDeal: requireCanonicalDealTransport(input) };
 
     case "recalculateDeal":
-      assertOnlyKeys(input, ["canonicalDealJson", "canonicalDeal", "idempotencyKey"]);
+      assertOnlyKeys(input, ["validatedCanonicalRef", "idempotencyKey"]);
       return {
-        canonicalDeal: requireCanonicalDealTransport(input),
+        validatedCanonicalRef: requireNonEmptyString(input.validatedCanonicalRef, "validatedCanonicalRef", 20),
         idempotencyKey: requireNonEmptyString(input.idempotencyKey, "idempotencyKey", 8),
       };
 

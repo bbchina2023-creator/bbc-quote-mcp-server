@@ -21,7 +21,7 @@ test("Release C exposes exactly the five final manager-facing tools", () => {
   }
 });
 
-test("canonical Actions expose exact JSON text transport instead of model-reconstructed objects", () => {
+test("canonical validation accepts the attached object and recalculation consumes only its validated reference", () => {
   const validateBlock = contour.slice(
     contour.indexOf('server.registerTool(\n    "validateCanonicalDeal"'),
     contour.indexOf('server.registerTool(\n    "recalculateDeal"'),
@@ -30,11 +30,11 @@ test("canonical Actions expose exact JSON text transport instead of model-recons
     contour.indexOf('server.registerTool(\n    "recalculateDeal"'),
     contour.indexOf('server.registerTool(\n    "getVerifiedSnapshot"'),
   );
-  for (const block of [validateBlock, recalculateBlock]) {
-    assert.match(block, /canonicalDealJson: z\.string\(\)\.min\(2\)\.max\(ACTION_BODY_MAX_BYTES - 1024\)/);
-    assert.doesNotMatch(block, /canonicalDeal: canonicalDealSchema/);
-    assert.match(block, /normalizeActionArguments/);
-  }
+  assert.match(validateBlock, /canonicalDeal: canonicalDealSchema/);
+  assert.doesNotMatch(validateBlock, /canonicalDealJson/);
+  assert.match(validateBlock, /validatedCanonicalRef/);
+  assert.match(recalculateBlock, /validatedCanonicalRef: z\.string\(\)\.regex/);
+  assert.doesNotMatch(recalculateBlock, /canonicalDealJson|canonicalDeal: canonicalDealSchema/);
 });
 
 test("ChatGPT OAuth discovery advertises refresh-capable offline access without polluting resource scopes", () => {

@@ -55,15 +55,15 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [canonicalDealJson, idempotencyKey]
+              required: [validatedCanonicalRef, idempotencyKey]
               properties:
-                canonicalDealJson:
+                validatedCanonicalRef:
                   type: string
-                  minLength: 2
-                  maxLength: 85000
+                  minLength: 20
+                  maxLength: 300
                   description: >-
-                    Exact Canonical Deal Contract v1 that passed validateCanonicalDeal, serialized as one JSON string.
-                    Reuse the exact same JSON text for recalculation; do not reconstruct or summarize it.
+                    Short-lived immutable reference returned by the successful validateCanonicalDeal call.
+                    Do not reconstruct or resend the Canonical Deal.
                 idempotencyKey:
                   type: string
                   minLength: 8

@@ -106,7 +106,7 @@ test("RC-CORR-03 blocks a multi-item expense that would disappear", () => {
 test("RC-CORR-03 Worker fails closed on an unexpected backend contour", () => {
   const source = fs.readFileSync(new URL("../src/staging-contour-rc.js", import.meta.url), "utf8");
   assert.match(source, /BACKEND_CONTOUR_VERSION_MISMATCH/);
-  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.9-rc-corr-26"/);
+  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.10-rc-corr-27"/);
 });
 
 test("RC-CORR-03 Apps Script binds snapshot metadata and performs structural PDF checks", () => {
