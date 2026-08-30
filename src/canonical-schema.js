@@ -285,7 +285,12 @@ export const canonicalDealSchema = z.object({
       if (!expense.includeInCalculation || expense.itemId) continue;
       const method = String(expense.allocationMethod || "").toUpperCase();
       const rows = allocationsByExpense.get(expense.expenseId) || [];
-      if (method !== "GOODS_VALUE_SHARE" && rows.length === 0) ctx.addIssue({ code: "custom", path: ["expenses", index, "allocationMethod"], message: "multi-item deal expense requires explicit allocations or GOODS_VALUE_SHARE" });
+      const deterministicDealMethod = method === "GOODS_VALUE_SHARE"
+        || method === "EQUAL_PER_UNIT_TOTAL_QUANTITY";
+      if (!deterministicDealMethod && rows.length === 0) ctx.addIssue({
+        code: "custom", path: ["expenses", index, "allocationMethod"],
+        message: "multi-item deal expense requires explicit allocations, GOODS_VALUE_SHARE or EQUAL_PER_UNIT_TOTAL_QUANTITY",
+      });
       if (rows.length && new Set(rows.map((row) => row.itemId)).size !== value.items.length) ctx.addIssue({ code: "custom", path: ["allocations"], message: `expense ${expense.expenseId} allocations must cover every item` });
       if (rows.length && rows.every((row) => row.share != null)) {
         const sum = rows.reduce((total, row) => total + row.share, 0);
