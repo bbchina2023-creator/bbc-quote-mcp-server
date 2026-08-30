@@ -27,7 +27,7 @@ export { OAuthStateDurableObject } from "./oauth-state-do.js";
 const SERVER_NAME = "BBC KP Generator — Document Contour";
 const SERVER_VERSION = "1.0.5-rc-corr-06c-staging";
 const RELEASE_ID = "RC-CORR-06C";
-const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.11-rc-corr-28";
+const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.12-rc-corr-29";
 const SOURCE_BASE_COMMIT = "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1";
 const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
 const SCOPE_ENFORCEMENT = "ROOT_SECURITY_SCHEMES_INBAND_MCP_AUTH_CHALLENGE_V4";

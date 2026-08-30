@@ -124,7 +124,7 @@ test("RC28 accepts equal-per-unit allocation for a multi-item deal expense", () 
 test("RC-CORR-03 Worker fails closed on an unexpected backend contour", () => {
   const source = fs.readFileSync(new URL("../src/staging-contour-rc.js", import.meta.url), "utf8");
   assert.match(source, /BACKEND_CONTOUR_VERSION_MISMATCH/);
-  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.11-rc-corr-28"/);
+  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.12-rc-corr-29"/);
 });
 
 test("RC-CORR-03 Apps Script binds snapshot metadata and performs structural PDF checks", () => {
