@@ -27,7 +27,7 @@ export { OAuthStateDurableObject } from "./oauth-state-do.js";
 const SERVER_NAME = "BBC KP Generator — Document Contour";
 const SERVER_VERSION = "1.0.5-rc-corr-06c-staging";
 const RELEASE_ID = "RC-CORR-06C";
-const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.5-rc-corr-03";
+const EXPECTED_BACKEND_CONTOUR_VERSION = "1.0.12-rc-corr-29";
 const SOURCE_BASE_COMMIT = "0e4b1851871c8c3dcd4c11765468f7a3f96f91e1";
 const CANONICAL_SCHEMA_ID = "canonical-deal-contract-v1";
 const SCOPE_ENFORCEMENT = "ROOT_SECURITY_SCHEMES_INBAND_MCP_AUTH_CHALLENGE_V4";
@@ -161,9 +161,9 @@ function createServer(env, effectiveScopes) {
     {
       title: "Проверить Canonical Deal",
       description:
-        "Read-only validation of Canonical Deal Contract v1 assembled by ChatGPT from the current uploaded documents. " +
+        "Read-only validation of Canonical Deal Contract v1 assembled from the current uploaded file. " +
         "Checks schema, lineage, rule authority, payment schedule, quote readiness and deterministic preview. " +
-        "The backend does not semantically parse source documents.",
+        "On success returns validatedCanonicalRef for recalculateDeal; the backend does not semantically parse source documents.",
       inputSchema: { canonicalDeal: canonicalDealSchema },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       _meta: oauthToolMeta("quote.read"),
@@ -181,10 +181,11 @@ function createServer(env, effectiveScopes) {
     {
       title: "Создать verified Snapshot v2",
       description:
-        "Deterministically calculates an already prepared Canonical Deal Contract v1, persists immutable canonical/payment/rule records, " +
+        "Deterministically calculates the exact Canonical Deal previously accepted by validateCanonicalDeal. " +
+        "Pass only its short-lived validatedCanonicalRef; never reconstruct or resend the Canonical. Persists immutable records " +
         "and creates VERIFIED Snapshot v2. Requires a stable idempotency key. No raw-import reads and no legacy calculation writes.",
       inputSchema: {
-        canonicalDeal: canonicalDealSchema,
+        validatedCanonicalRef: z.string().regex(/^VCAN1-[A-Za-z0-9-]{20,220}$/),
         idempotencyKey: z.string().min(8),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

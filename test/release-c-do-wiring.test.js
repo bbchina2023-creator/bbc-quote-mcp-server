@@ -48,8 +48,10 @@ test("entrypoint exports the Durable Object class", () => {
   assert.match(durableObject, /export class OAuthStateDurableObject extends DurableObject/);
 });
 
-test("strict canonical schema is bound at the MCP boundary", () => {
+test("MCP validates the strict Canonical object once and recalculates by validated reference", () => {
   assert.match(contour, /import \{ canonicalDealSchema \} from "\.\/canonical-schema\.js";/);
+  assert.match(contour, /inputSchema: \{ canonicalDeal: canonicalDealSchema \}/);
+  assert.match(contour, /validatedCanonicalRef: z\.string\(\)\.regex/);
   assert.doesNotMatch(contour, /z\.record\(z\.string\(\), z\.unknown\(\)\)/);
   assert.match(canonicalSchema, /canonicalId:\s*z\.string\(\)\.min\(1\)/);
   assert.match(canonicalSchema, /paymentSchedules:\s*z\.array\(paymentScheduleSchema\)/);

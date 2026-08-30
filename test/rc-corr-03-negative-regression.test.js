@@ -103,10 +103,28 @@ test("RC-CORR-03 blocks a multi-item expense that would disappear", () => {
   assert.equal(canonicalDealSchema.safeParse(canonical).success, false);
 });
 
+test("RC28 accepts equal-per-unit allocation for a multi-item deal expense", () => {
+  const canonical = baseCanonical();
+  canonical.items.push({
+    itemId: "ITEM-2", itemNumber: 2, name: "Item 2", quantity: 1,
+    quantityUnit: "pcs", priceType: "UNIT", unitPrice: 10,
+    priceCurrency: "CNY", batchAmount: 10,
+  });
+  canonical.expenses.push({
+    expenseId: "EXP-EQUAL-1", itemId: null, level: "DEAL",
+    category: "companyServices", article: "bbcServices",
+    calculationBucket: "companyServices", amount: 30, currency: "CNY",
+    allocationMethod: "EQUAL_PER_UNIT_TOTAL_QUANTITY",
+    includeInCalculation: true, showToClient: true,
+  });
+  const result = canonicalDealSchema.safeParse(canonical);
+  assert.equal(result.success, true, result.success ? "" : JSON.stringify(result.error.issues));
+});
+
 test("RC-CORR-03 Worker fails closed on an unexpected backend contour", () => {
   const source = fs.readFileSync(new URL("../src/staging-contour-rc.js", import.meta.url), "utf8");
   assert.match(source, /BACKEND_CONTOUR_VERSION_MISMATCH/);
-  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.5-rc-corr-03"/);
+  assert.match(source, /EXPECTED_BACKEND_CONTOUR_VERSION\s*=\s*"1\.0\.12-rc-corr-29"/);
 });
 
 test("RC-CORR-03 Apps Script binds snapshot metadata and performs structural PDF checks", () => {

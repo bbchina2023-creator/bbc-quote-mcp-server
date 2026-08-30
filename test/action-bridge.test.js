@@ -79,7 +79,7 @@ test("authorized request passes exact action and normalized arguments", async ()
 
 
 
-test("canonicalDealJson transport parses into the exact backend object", () => {
+test("validation JSON transport parses exactly and recalculation uses the validated reference", () => {
   const canonical = { contractVersion: "1.0", dealId: "BBC-X", items: [] };
   assert.deepEqual(
     normalizeActionArguments("validateCanonicalDeal", { canonicalDealJson: JSON.stringify(canonical) }),
@@ -87,10 +87,13 @@ test("canonicalDealJson transport parses into the exact backend object", () => {
   );
   assert.deepEqual(
     normalizeActionArguments("recalculateDeal", {
-      canonicalDealJson: JSON.stringify(canonical),
+      validatedCanonicalRef: "VCAN1-REQ-test-123456789012345678901234",
       idempotencyKey: "idempotency-1",
     }),
-    { canonicalDeal: canonical, idempotencyKey: "idempotency-1" },
+    {
+      validatedCanonicalRef: "VCAN1-REQ-test-123456789012345678901234",
+      idempotencyKey: "idempotency-1",
+    },
   );
 });
 
@@ -127,7 +130,10 @@ test("getVerifiedSnapshot never exposes full payload through Actions", () => {
 
 test("recalculate and generate require stable idempotency keys", () => {
   assert.throws(
-    () => normalizeActionArguments("recalculateDeal", { canonicalDeal: {}, idempotencyKey: "short" }),
+    () => normalizeActionArguments("recalculateDeal", {
+      validatedCanonicalRef: "VCAN1-REQ-test-123456789012345678901234",
+      idempotencyKey: "short",
+    }),
     /idempotencyKey is required/,
   );
   assert.throws(

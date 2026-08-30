@@ -41,14 +41,12 @@ test("staging config requires a separate GPT_ACTION_KEY secret", () => {
   assert.match(wrangler, /"name": "bbc-quote-mcp-server-staging"/);
 });
 
-test("Custom GPT canonical transport is a bounded JSON string, not a nested free-form object", () => {
+test("Custom GPT validates JSON text once and recalculates through its short reference", () => {
   const validateBlock = schema.match(/\/actions\/validate-canonical-deal:[\s\S]*?\/actions\/recalculate-deal:/)?.[0] || "";
   const recalcBlock = schema.match(/\/actions\/recalculate-deal:[\s\S]*?\/actions\/get-verified-snapshot:/)?.[0] || "";
-  for (const block of [validateBlock, recalcBlock]) {
-    assert.match(block, /canonicalDealJson:/);
-    assert.match(block, /type:\s*string/);
-    assert.match(block, /maxLength:\s*85000/);
-    assert.doesNotMatch(block, /\n\s+canonicalDeal:\s*\n\s+type:\s*object/);
-  }
+  assert.match(validateBlock, /canonicalDealJson:/);
+  assert.match(validateBlock, /maxLength:\s*85000/);
+  assert.match(recalcBlock, /validatedCanonicalRef:/);
+  assert.match(recalcBlock, /maxLength:\s*300/);
+  assert.doesNotMatch(recalcBlock, /canonicalDealJson:|\n\s+canonicalDeal:\s*\n\s+type:\s*object/);
 });
-
